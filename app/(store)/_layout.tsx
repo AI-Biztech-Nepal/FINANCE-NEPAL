@@ -1,5 +1,5 @@
 // app/(store)/_layout.tsx
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useAuthStore } from '../../lib/hooks/useAuth';
@@ -8,6 +8,7 @@ import { RoleGuard } from '../../lib/components/RoleGuard';
 import { freshScreenLayout } from '../../lib/components/FreshScreen';
 import { TabIcon } from '../../lib/components/TabIcon';
 import { PortalHeaderBar } from '../../lib/components/PortalHeaderBar';
+import { MobileNavDrawer } from '../../lib/components/MobileNavDrawer';
 import { ROLE_ACCENT } from '../../lib/constants/roleColors';
 import { WebSidebarShell, WEB_SIDEBAR_MIN_WIDTH, type WebNavItem } from '../../lib/components/web/WebSidebarShell';
 import { shortcuts as financeShortcuts } from '../../lib/components/finance/FinanceDashboardScreen';
@@ -38,23 +39,30 @@ const REPORT_FAMILY: WebNavItem[] = [
   { href: '/(store)/to-give', label: 'Payable Report', icon: 'storefront' },
 ];
 
-const NAV_ITEMS: WebNavItem[] = [
+const navWith = (pages: ReturnType<typeof financeShortcuts>): WebNavItem[] => [
   { href: '/(store)/company-dashboard', label: 'Dashboard', icon: 'grid' },
   {
     href: '/(store)/finance',
     label: 'Finance',
     icon: 'wallet',
-    children: financeShortcuts('/(store)')
-      .filter((s) => !DAYBOOK_ENTRY_KEYS.has(s.key))
-      .sort((a, b) => financeNavRank(a.key) - financeNavRank(b.key))
-      .map((s) => ({
-        href: s.href,
-        label: s.label,
-        icon: s.icon,
-        ...(s.key === 'report' ? { children: REPORT_FAMILY } : null),
-      })),
+    children: pages.map((s) => ({
+      href: s.href,
+      label: s.label,
+      icon: s.icon,
+      ...(s.key === 'report' ? { children: REPORT_FAMILY } : null),
+    })),
   },
 ];
+
+const NAV_ITEMS = navWith(
+  financeShortcuts('/(store)')
+    .filter((s) => !DAYBOOK_ENTRY_KEYS.has(s.key))
+    .sort((a, b) => financeNavRank(a.key) - financeNavRank(b.key))
+);
+
+// The phone's side panel (MobileNavDrawer) lists every one of the Finance page's shortcuts, the entries
+// (Received, Paid, Sales, Purchase, Expenses) included, in that page's own order.
+const PHONE_NAV_ITEMS = navWith(financeShortcuts('/(store)'));
 
 // A vehicle account also rents its cars out and sells them on EMI, and keeps Stock and Inventory as two lists: Stock
 // (only what is still in hand) stays one of Finance's pages, where Stock and Inventory was; Rent & EMI (EMI and Rent
@@ -116,6 +124,8 @@ export default function StoreLayout() {
   const profile = useAuthStore((state) => state.profile);
   const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
   const navItems = useMemo(() => (vehicles ? vehicleNav(NAV_ITEMS) : NAV_ITEMS), [vehicles]);
+  const phoneNavItems = useMemo(() => (vehicles ? vehicleNav(PHONE_NAV_ITEMS) : PHONE_NAV_ITEMS), [vehicles]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
       backBehavior="history"
@@ -125,6 +135,7 @@ export default function StoreLayout() {
         header: ({ options }) => (
           <PortalHeaderBar
             title={options.title}
+            onMenu={isWideWeb ? undefined : () => setMenuOpen(true)}
             hideAccount={isWideWeb}
             left={options.headerLeft?.({ canGoBack: false })}
             right={options.headerRight?.({ canGoBack: false })}
@@ -155,7 +166,16 @@ export default function StoreLayout() {
           {tabs}
         </WebSidebarShell>
       ) : (
-        tabs
+        <>
+          {tabs}
+          <MobileNavDrawer
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            items={phoneNavItems}
+            roleLabel="Company"
+            profileHref="/(store)/profile"
+          />
+        </>
       )}
     </RoleGuard>
   );
