@@ -1035,6 +1035,16 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       showAlert('Add a name', 'Enter the product name.');
       return;
     }
+    // Names are unique (in any case), so a second "Waiwai" would be refused by the database only after "Yes, save"
+    // and drop the user back on the form. Say so now and offer the one already in stock.
+    const same = (products ?? []).find((p) => p.id !== editing.id && nameKey(p.name) === nameKey(f.name));
+    if (same) {
+      showAlert('Already in your stock', `"${same.name}" is already a product, so it cannot be added again. Open it to change it, or use a different name.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open it', onPress: () => setEditing({ id: same.id, form: formFromProduct(same) }) },
+      ]);
+      return;
+    }
     const values: ProductValues = {
       name: f.name.trim(),
       sku: f.sku.trim() || null,
