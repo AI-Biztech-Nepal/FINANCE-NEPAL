@@ -36,7 +36,8 @@ import { toBsHistoryLabel } from '../../utils/nepaliDate';
 import { localTodayIso } from '../../utils/localDate';
 import { compareItems, entryDay } from '../../utils/ledgerStatement';
 import { reportHtml, type PrintReport } from '../../utils/printReport';
-import { itemListOf, sellsVehicles } from '../../utils/accountFeatures';
+import { isAllInOneAbroad, itemListOf, sellsVehicles } from '../../utils/accountFeatures';
+import { EMPTY_WEBSITE_FORM, WebsiteListingFields, type WebsiteForm } from './WebsiteListingFields';
 import { round2 } from '../../utils/money';
 import { highlightText } from './Highlight';
 import { tidyName } from '../../utils/nameCaps';
@@ -109,7 +110,8 @@ interface Movement {
 const qty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 const rs = (n: number | null) => (n == null ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 2 }));
 
-interface FormState {
+// The website fields (WebsiteForm) ride along in the form but have their own section, not a row of the grid.
+interface FormState extends WebsiteForm {
   name: string;
   sku: string;
   barcode: string;
@@ -121,13 +123,17 @@ interface FormState {
   reorder_level: string;
 }
 
+/** The fields drawn as rows of the grid. */
+type GridKey = Exclude<keyof FormState, keyof WebsiteForm>;
+
 const EMPTY_FORM: FormState = {
   name: '', sku: '', barcode: '', category: '', unit: 'pcs', price: '', purchase_price: '', stock_level: '', reorder_level: '',
+  ...EMPTY_WEBSITE_FORM,
 };
 
 // The form's field order - down the rows, left to right - which is also the
 // order Enter walks through them (the last one saves).
-const FORM_ROWS: (keyof FormState)[][] = [
+const FORM_ROWS: GridKey[][] = [
   ['name'],
   ['sku', 'barcode'],
   ['category', 'unit'],
@@ -135,9 +141,10 @@ const FORM_ROWS: (keyof FormState)[][] = [
   ['stock_level', 'reorder_level'],
 ];
 const FORM_ORDER = FORM_ROWS.flat();
-const NUMERIC_FIELDS = new Set<keyof FormState>(['price', 'purchase_price', 'stock_level', 'reorder_level']);
+const NUMERIC_FIELDS = new Set<GridKey>(['price', 'purchase_price', 'stock_level', 'reorder_level']);
 
-/** What a save writes to `products` (the form's text, parsed). */
+/** What a save writes to `products` (the form's text, parsed). The website columns are only here for an account that
+ * has a website (see isAllInOneAbroad) - others never send them, so they work before 0028 is run. */
 interface ProductValues {
   name: string;
   sku: string | null;
@@ -148,6 +155,11 @@ interface ProductValues {
   purchase_price: number | null;
   stock_level: number;
   reorder_level: number;
+  show_on_website?: boolean;
+  website_category?: 'luggage' | 'kitchen' | 'appliances' | null;
+  image_url?: string | null;
+  description?: string | null;
+  original_price?: number | null;
 }
 
 function formFromProduct(p: Product): FormState {
@@ -161,6 +173,11 @@ function formFromProduct(p: Product): FormState {
     purchase_price: p.purchase_price != null ? String(p.purchase_price) : '',
     stock_level: String(p.stock_level),
     reorder_level: String(p.reorder_level),
+    show_on_website: p.show_on_website ? '1' : '',
+    website_category: p.website_category ?? '',
+    image_url: p.image_url ?? '',
+    description: p.description ?? '',
+    original_price: p.original_price != null ? String(p.original_price) : '',
   };
 }
 
@@ -551,6 +568,8 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
   });
   // A vehicle account reads each car's money - paid and still owed - where others read units sold and bought.
   const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  // An account with its own website lists items on it from here: a switch, a photo and a category on each item.
+  const website = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
   const { data: vendorLedger } = useSupabaseQuery('vendor_ledger_entries', {
     filters: userId ? { owner_id: userId } : {},
     all: true,
@@ -1027,6 +1046,22 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       stock_level: Number(f.stock_level) || 0,
       reorder_level: Number(f.reorder_level) || 0,
     };
+    if (website) {
+      const listed = f.show_on_website === '1';
+      const original = f.original_price.trim() ? Number(f.original_price) : null;
+      // The shop cannot list an item without these, so say so now rather than save an item that silently never shows.
+      if (listed && !f.image_url) return showAlert('Add a photo', 'The website needs a photo to list this item.');
+      if (listed && !f.website_category) return showAlert('Pick a shop section', 'Choose Luggage, Kitchen or Home Appliances so the website knows where to put it.');
+      if (listed && !(values.price > 0)) return showAlert('Add a selling price', 'The website needs a selling price to list this item.');
+      if (original != null && !(original > values.price)) {
+        return showAlert('Check the price before discount', 'It must be higher than the selling price, or leave it empty.');
+      }
+      values.show_on_website = listed;
+      values.website_category = f.website_category === 'luggage' || f.website_category === 'kitchen' || f.website_category === 'appliances' ? f.website_category : null;
+      values.image_url = f.image_url || null;
+      values.description = f.description.trim() || null;
+      values.original_price = original;
+    }
     setConfirming({
       values,
       options: {
@@ -1036,6 +1071,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
           { label: editing.id ? 'In stock' : 'Opening stock', value: `${qty(values.stock_level)} ${values.unit}` },
           { label: 'Selling price', value: `NPR ${rs(values.price)}` },
           ...(values.purchase_price != null ? [{ label: 'Cost price', value: `NPR ${rs(values.purchase_price)}` }] : []),
+          ...(website ? [{ label: 'On website', value: values.show_on_website ? 'Yes' : 'No' }] : []),
         ],
       },
     });
@@ -1259,7 +1295,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
 
   const dialogMode = layout.wide;
 
-  const fieldLabel = (key: keyof FormState): string => {
+  const fieldLabel = (key: GridKey): string => {
     switch (key) {
       case 'name': return 'Name';
       case 'sku': return 'SKU';
@@ -1316,6 +1352,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
         </View>
         {!!editing.hint && <Text className="-mt-2 mb-4 text-xs leading-[17px] text-gray-500">{editing.hint}</Text>}
         {formFields}
+        {website && !!userId && <WebsiteListingFields form={editing.form} set={set} ownerId={userId} />}
         {dialogMode ? (
           <View className="mt-2 flex-row items-center" style={{ gap: 10 }}>
             {deletable && (

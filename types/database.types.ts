@@ -41,6 +41,14 @@ export interface Product {
   stock_level: number;
   reorder_level: number;
   is_active: boolean;
+  /** Listed on the company's own website (0028) - an account that sells online. The fields below are read only then. */
+  show_on_website?: boolean;
+  website_category?: 'luggage' | 'kitchen' | 'appliances' | null;
+  /** The item's photo, a public link into the product-photos bucket. */
+  image_url?: string | null;
+  description?: string | null;
+  /** The price before a discount, struck through on the website beside the selling price. */
+  original_price?: number | null;
   created_at: string;
   updated_at: string;
 }
