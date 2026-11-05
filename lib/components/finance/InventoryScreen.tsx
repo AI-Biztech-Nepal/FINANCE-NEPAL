@@ -162,6 +162,14 @@ interface ProductValues {
   original_price?: number | null;
 }
 
+/** What an item that is switched on for the website still lacks before the shop can list it. */
+function websiteGaps(v: ProductValues): string[] {
+  if (!v.show_on_website) return [];
+  return [!v.image_url && 'a photo', !v.website_category && 'a shop section', !(v.price > 0) && 'a selling price'].filter(
+    (gap): gap is string => !!gap
+  );
+}
+
 function formFromProduct(p: Product): FormState {
   return {
     name: p.name,
@@ -1059,10 +1067,8 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
     if (website) {
       const listed = f.show_on_website === '1';
       const original = f.original_price.trim() ? Number(f.original_price) : null;
-      // The shop cannot list an item without these, so say so now rather than save an item that silently never shows.
-      if (listed && !f.image_url) return showAlert('Add a photo', 'The website needs a photo to list this item.');
-      if (listed && !f.website_category) return showAlert('Pick a shop section', 'Choose Luggage, Kitchen or Home Appliances so the website knows where to put it.');
-      if (listed && !(values.price > 0)) return showAlert('Add a selling price', 'The website needs a selling price to list this item.');
+      // Save always saves. An item that lacks something the shop needs is kept (the website leaves it out until it is
+      // complete - see website_products()), and the save says what is missing afterwards (see websiteGaps).
       // A price before discount that is not higher than the selling price is saved as typed; the website only strikes
       // it through when it is higher (see app_sync.php), so there is nothing to refuse here.
       values.show_on_website = listed;
@@ -1080,7 +1086,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
           { label: editing.id ? 'In stock' : 'Opening stock', value: `${qty(values.stock_level)} ${values.unit}` },
           { label: 'Selling price', value: `NPR ${rs(values.price)}` },
           ...(values.purchase_price != null ? [{ label: 'Cost price', value: `NPR ${rs(values.purchase_price)}` }] : []),
-          ...(website ? [{ label: 'On website', value: values.show_on_website ? 'Yes' : 'No' }] : []),
+          ...(website ? [{ label: 'On website', value: !values.show_on_website ? 'No' : websiteGaps(values).length ? 'Not yet - incomplete' : 'Yes' }] : []),
         ],
       },
     });
@@ -1102,6 +1108,11 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       const msg = getErrorMessage(err);
       showAlert('Could not save', /duplicate key/i.test(msg) ? 'A product with this name or barcode already exists.' : msg);
       return;
+    }
+    // Saved, but the shop leaves an incomplete item out - say what it needs so it is not left waiting unseen.
+    const gaps = websiteGaps(values);
+    if (gaps.length) {
+      showAlert('Saved - not on the website yet', `${values.name} will appear on allinoneabroad.com once you add ${gaps.join(' and ')}. Open it from the list and press Edit.`);
     }
     // A new name goes onto its bills, payments and rentals too, or the item would lose its vendor, model,
     // what was paid and what is due (see renameStockItem).
