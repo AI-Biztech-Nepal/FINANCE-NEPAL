@@ -1356,50 +1356,81 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
   const saving = createProduct.isPending || updateProduct.isPending;
   const deletable = editing?.id ? (products ?? []).find((p) => p.id === editing.id) : undefined;
 
+  // The form is cut into a title, the fields and the buttons so a wide screen can keep the title and the buttons in
+  // place while only the fields scroll (see wideBody); a phone scrolls all of it together (see dialogBody).
+  const formTitle = editing && (
+    <>
+      <View className="mb-4 flex-row items-center justify-between">
+        <Text className={dialogMode ? 'text-lg font-extrabold text-gray-900' : 'text-lg font-bold text-gray-900'}>
+          {editing.id ? 'Edit product' : 'New product'}
+        </Text>
+        <Pressable onPress={closeDialog} hitSlop={8} accessibilityLabel="Close">
+          <Ionicons name="close" size={24} color="#374151" />
+        </Pressable>
+      </View>
+      {!!editing.hint && <Text className="-mt-2 mb-4 text-xs leading-[17px] text-gray-500">{editing.hint}</Text>}
+    </>
+  );
+  const formContent = editing && (
+    <>
+      {formFields}
+      {website && !!userId && (
+        <WebsiteListingFields form={editing.form} set={set} ownerId={userId} sellingPrice={Number(editing.form.price) || 0} />
+      )}
+    </>
+  );
+  const formButtons = dialogMode ? (
+    <View className="flex-row items-center border-t border-gray-100 pt-4" style={{ gap: 10, marginTop: 8 }}>
+      {deletable && (
+        <Pressable onPress={() => confirmDelete(deletable)} className="rounded-xl border border-red-200 px-4 py-3">
+          <Text className="text-sm font-bold text-red-600">Delete</Text>
+        </Pressable>
+      )}
+      <View className="flex-1" />
+      <Pressable onPress={closeDialog} className="rounded-xl border border-gray-300 bg-white px-5 py-3">
+        <Text className="text-sm font-bold text-gray-600">Cancel</Text>
+      </Pressable>
+      <Pressable onPress={save} disabled={saving} className="rounded-xl px-6 py-3 disabled:opacity-50" style={{ backgroundColor: '#1D4ED8' }}>
+        <Text className="text-sm font-bold text-white">Save</Text>
+      </Pressable>
+    </View>
+  ) : (
+    <>
+      <Pressable onPress={save} disabled={saving} className="mt-2 items-center rounded-xl bg-blue-600 py-3.5 disabled:opacity-50">
+        <Text className="text-[15px] font-bold text-white">Save</Text>
+      </Pressable>
+      {deletable && (
+        <Pressable onPress={() => confirmDelete(deletable)} className="mt-3 items-center rounded-xl border border-red-200 py-3.5">
+          <Text className="text-[15px] font-bold text-red-600">Delete product</Text>
+        </Pressable>
+      )}
+    </>
+  );
+  const confirmCard = confirming && <ConfirmSaveCard options={confirming.options} onConfirm={commitSave} onCancel={backToForm} />;
+
   // While the "save this?" question is up the form is only hidden, not
   // unmounted, so everything typed (and the caret's place) survives a "No".
+  // A phone: everything scrolls together.
   const dialogBody: ReactNode = editing && (
     <>
-      {confirming && <ConfirmSaveCard options={confirming.options} onConfirm={commitSave} onCancel={backToForm} />}
+      {confirmCard}
       <View style={confirming ? { display: 'none' } : undefined}>
-        <View className="mb-4 flex-row items-center justify-between">
-          <Text className={dialogMode ? 'text-lg font-extrabold text-gray-900' : 'text-lg font-bold text-gray-900'}>
-            {editing.id ? 'Edit product' : 'New product'}
-          </Text>
-          <Pressable onPress={closeDialog} hitSlop={8} accessibilityLabel="Close">
-            <Ionicons name="close" size={24} color="#374151" />
-          </Pressable>
-        </View>
-        {!!editing.hint && <Text className="-mt-2 mb-4 text-xs leading-[17px] text-gray-500">{editing.hint}</Text>}
-        {formFields}
-        {website && !!userId && <WebsiteListingFields form={editing.form} set={set} ownerId={userId} />}
-        {dialogMode ? (
-          <View className="mt-2 flex-row items-center" style={{ gap: 10 }}>
-            {deletable && (
-              <Pressable onPress={() => confirmDelete(deletable)} className="rounded-xl border border-red-200 px-4 py-3">
-                <Text className="text-sm font-bold text-red-600">Delete</Text>
-              </Pressable>
-            )}
-            <View className="flex-1" />
-            <Pressable onPress={closeDialog} className="rounded-xl border border-gray-300 bg-white px-5 py-3">
-              <Text className="text-sm font-bold text-gray-600">Cancel</Text>
-            </Pressable>
-            <Pressable onPress={save} disabled={saving} className="rounded-xl px-6 py-3 disabled:opacity-50" style={{ backgroundColor: '#1D4ED8' }}>
-              <Text className="text-sm font-bold text-white">Save</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <Pressable onPress={save} disabled={saving} className="mt-2 items-center rounded-xl bg-blue-600 py-3.5 disabled:opacity-50">
-              <Text className="text-[15px] font-bold text-white">Save</Text>
-            </Pressable>
-            {deletable && (
-              <Pressable onPress={() => confirmDelete(deletable)} className="mt-3 items-center rounded-xl border border-red-200 py-3.5">
-                <Text className="text-[15px] font-bold text-red-600">Delete product</Text>
-              </Pressable>
-            )}
-          </>
-        )}
+        {formTitle}
+        {formContent}
+        {formButtons}
+      </View>
+    </>
+  );
+  // A wide screen: the title and the buttons stay in place and only the fields scroll, so Save is always in reach.
+  const wideBody: ReactNode = editing && (
+    <>
+      {confirmCard}
+      <View style={confirming ? { display: 'none' } : { flexShrink: 1, minHeight: 0 }}>
+        {formTitle}
+        <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+          {formContent}
+        </ScrollView>
+        {formButtons}
       </View>
     </>
   );
@@ -1494,13 +1525,13 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       >
         {dialogMode ? (
           <View className="flex-1 items-center justify-center bg-black/40 px-6">
-            {/* The card never grows past the window: a long form (the website section) scrolls inside it, so Save
-                stays reachable. */}
+            {/* The card never grows past the window: a long form (the website section) scrolls inside it between the
+                title and the buttons, so Save stays reachable. */}
             <View
               className="w-full rounded-2xl bg-white"
               style={{ maxWidth: 560, maxHeight: '92%', padding: 24, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' }}
             >
-              <ScrollView keyboardShouldPersistTaps="handled">{dialogBody}</ScrollView>
+              {wideBody}
             </View>
           </View>
         ) : (
