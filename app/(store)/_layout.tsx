@@ -88,12 +88,18 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
-// The All In One Abroad account (the Luvkush login) keeps only the Dashboard and, below it, Stock and Inventory: Finance
-// and everything under it leave the side panel. Stock and Inventory is taken from Finance's own list so its label and
-// icon never drift.
-function stockOnlyNav(items: WebNavItem[]): WebNavItem[] {
+// The All In One Abroad account (the Luvkush login) has the whole side panel, with Stock and Inventory right below the
+// Dashboard instead of inside Finance; everything else stays where it is. Stock and Inventory is taken from Finance's own
+// list so its label and icon never drift.
+function stockBelowDashboardNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
-  return stock ? [items[0], stock] : [items[0]];
+  if (!stock) return items;
+  const [dashboard, ...rest] = items;
+  return [
+    dashboard,
+    stock,
+    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => child !== stock) } : item)),
+  ];
 }
 
 const HIDDEN: [string, string][] = [
@@ -132,11 +138,12 @@ export default function StoreLayout() {
   const profile = useAuthStore((state) => state.profile);
   const accountName = profile?.business_name?.trim() || profile?.full_name;
   const vehicles = sellsVehicles(accountName);
-  const stockOnly = isAllInOneAbroad(accountName);
+  const stockUnderDashboard = isAllInOneAbroad(accountName);
   const [navItems, phoneNavItems] = useMemo(() => {
-    const shape = (base: WebNavItem[]) => (stockOnly ? stockOnlyNav(base) : vehicles ? vehicleNav(base) : base);
+    const shape = (base: WebNavItem[]) =>
+      stockUnderDashboard ? stockBelowDashboardNav(base) : vehicles ? vehicleNav(base) : base;
     return [shape(NAV_ITEMS), shape(PHONE_NAV_ITEMS)];
-  }, [vehicles, stockOnly]);
+  }, [vehicles, stockUnderDashboard]);
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
@@ -161,27 +168,13 @@ export default function StoreLayout() {
         name="company-dashboard"
         options={{ title: 'Dashboard', tabBarIcon: ({ color, focused }) => <TabIcon name="grid" color={color} focused={focused} /> }}
       />
-      {/* On the All In One Abroad account the phone's bottom bar follows the side panel: Finance is out, Stock and Inventory
-          takes its place beside the Dashboard. */}
       <Tabs.Screen
         name="finance"
-        options={
-          stockOnly
-            ? { href: null, title: 'Finance' }
-            : { title: 'Finance', tabBarIcon: ({ color, focused }) => <TabIcon name="wallet" color={color} focused={focused} /> }
-        }
+        options={{ title: 'Finance', tabBarIcon: ({ color, focused }) => <TabIcon name="wallet" color={color} focused={focused} /> }}
       />
-      {HIDDEN.map(([name, title]) =>
-        stockOnly && name === 'inventory' ? (
-          <Tabs.Screen
-            key={name}
-            name={name}
-            options={{ title, tabBarIcon: ({ color, focused }) => <TabIcon name="cube" color={color} focused={focused} /> }}
-          />
-        ) : (
-          <Tabs.Screen key={name} name={name} options={{ href: null, title: vehicles && name === 'inventory' ? 'Inventory' : title }} />
-        )
-      )}
+      {HIDDEN.map(([name, title]) => (
+        <Tabs.Screen key={name} name={name} options={{ href: null, title: vehicles && name === 'inventory' ? 'Inventory' : title }} />
+      ))}
     </Tabs>
   );
 
