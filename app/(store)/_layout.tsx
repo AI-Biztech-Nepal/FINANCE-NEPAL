@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useAuthStore } from '../../lib/hooks/useAuth';
-import { isAllInOneAbroad, isLuvkush, sellsVehicles } from '../../lib/utils/accountFeatures';
+import { isAllInOneAbroad, sellsVehicles } from '../../lib/utils/accountFeatures';
 import { RoleGuard } from '../../lib/components/RoleGuard';
 import { freshScreenLayout } from '../../lib/components/FreshScreen';
 import { TabIcon } from '../../lib/components/TabIcon';
@@ -88,24 +88,12 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
-// The Luvkush account keeps only the Dashboard and, below it, Stock and Inventory: Finance and everything under it
-// leave the side panel. Stock and Inventory is taken from Finance's own list so its label and icon never drift.
+// The All In One Abroad account (the Luvkush login) keeps only the Dashboard and, below it, Stock and Inventory: Finance
+// and everything under it leave the side panel. Stock and Inventory is taken from Finance's own list so its label and
+// icon never drift.
 function stockOnlyNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
   return stock ? [items[0], stock] : [items[0]];
-}
-
-// The All In One Abroad account lists Stock and Inventory right below the Dashboard, moved out of Finance; everything
-// else in the panel stays as it is.
-function stockBelowDashboardNav(items: WebNavItem[]): WebNavItem[] {
-  const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
-  if (!stock) return items;
-  const [dashboard, ...rest] = items;
-  return [
-    dashboard,
-    stock,
-    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => child !== stock) } : item)),
-  ];
 }
 
 const HIDDEN: [string, string][] = [
@@ -144,13 +132,11 @@ export default function StoreLayout() {
   const profile = useAuthStore((state) => state.profile);
   const accountName = profile?.business_name?.trim() || profile?.full_name;
   const vehicles = sellsVehicles(accountName);
-  const stockOnly = isLuvkush(accountName);
-  const stockUnderDashboard = isAllInOneAbroad(accountName);
+  const stockOnly = isAllInOneAbroad(accountName);
   const [navItems, phoneNavItems] = useMemo(() => {
-    const shape = (base: WebNavItem[]) =>
-      stockOnly ? stockOnlyNav(base) : stockUnderDashboard ? stockBelowDashboardNav(base) : vehicles ? vehicleNav(base) : base;
+    const shape = (base: WebNavItem[]) => (stockOnly ? stockOnlyNav(base) : vehicles ? vehicleNav(base) : base);
     return [shape(NAV_ITEMS), shape(PHONE_NAV_ITEMS)];
-  }, [vehicles, stockOnly, stockUnderDashboard]);
+  }, [vehicles, stockOnly]);
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
@@ -175,7 +161,7 @@ export default function StoreLayout() {
         name="company-dashboard"
         options={{ title: 'Dashboard', tabBarIcon: ({ color, focused }) => <TabIcon name="grid" color={color} focused={focused} /> }}
       />
-      {/* On the Luvkush account the phone's bottom bar follows the side panel: Finance is out, Stock and Inventory
+      {/* On the All In One Abroad account the phone's bottom bar follows the side panel: Finance is out, Stock and Inventory
           takes its place beside the Dashboard. */}
       <Tabs.Screen
         name="finance"
