@@ -1473,11 +1473,13 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       >
         {dialogMode ? (
           <View className="flex-1 items-center justify-center bg-black/40 px-6">
+            {/* The card never grows past the window: a long form (the website section) scrolls inside it, so Save
+                stays reachable. */}
             <View
               className="w-full rounded-2xl bg-white"
-              style={{ maxWidth: 560, padding: 24, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' }}
+              style={{ maxWidth: 560, maxHeight: '92%', padding: 24, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' }}
             >
-              {dialogBody}
+              <ScrollView keyboardShouldPersistTaps="handled">{dialogBody}</ScrollView>
             </View>
           </View>
         ) : (
