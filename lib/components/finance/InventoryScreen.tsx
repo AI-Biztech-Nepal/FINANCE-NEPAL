@@ -1053,9 +1053,8 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       if (listed && !f.image_url) return showAlert('Add a photo', 'The website needs a photo to list this item.');
       if (listed && !f.website_category) return showAlert('Pick a shop section', 'Choose Luggage, Kitchen or Home Appliances so the website knows where to put it.');
       if (listed && !(values.price > 0)) return showAlert('Add a selling price', 'The website needs a selling price to list this item.');
-      if (original != null && !(original > values.price)) {
-        return showAlert('Check the price before discount', 'It must be higher than the selling price, or leave it empty.');
-      }
+      // A price before discount that is not higher than the selling price is saved as typed; the website only strikes
+      // it through when it is higher (see app_sync.php), so there is nothing to refuse here.
       values.show_on_website = listed;
       values.website_category = f.website_category === 'luggage' || f.website_category === 'kitchen' || f.website_category === 'appliances' ? f.website_category : null;
       values.image_url = f.image_url || null;
