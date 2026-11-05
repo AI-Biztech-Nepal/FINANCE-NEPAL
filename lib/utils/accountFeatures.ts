@@ -8,6 +8,19 @@ export function sellsVehicles(businessName: string | null | undefined): boolean 
   return /\bdee?va\s+auto\b/i.test(businessName ?? '');
 }
 
+/** The Luvkush account only keeps stock: its side panel is the Dashboard and Stock and Inventory, nothing else. As with
+ * Deeva there is no per-account setting, so it is picked out by the business name on its profile - "Luvkush", "Luv Kush",
+ * "Luv-Kush" or "Lav Kush", in any case. */
+export function isLuvkush(businessName: string | null | undefined): boolean {
+  return /\bl[ua]v[\s_-]*kush\b/i.test(businessName ?? '');
+}
+
+/** The All In One Abroad account has Stock and Inventory right below the Dashboard in its side panel, not inside Finance.
+ * Picked out by the business name on its profile - "All In One Abroad" or "Allinone Abroad", in any case. */
+export function isAllInOneAbroad(businessName: string | null | undefined): boolean {
+  return /\ball[\s_-]*in[\s_-]*one[\s_-]*abroad\b/i.test(businessName ?? '');
+}
+
 export interface BannerColors {
   /** The flat band (Finance, Report). */
   solid: string;

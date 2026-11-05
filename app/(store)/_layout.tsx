@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useAuthStore } from '../../lib/hooks/useAuth';
-import { sellsVehicles } from '../../lib/utils/accountFeatures';
+import { isAllInOneAbroad, isLuvkush, sellsVehicles } from '../../lib/utils/accountFeatures';
 import { RoleGuard } from '../../lib/components/RoleGuard';
 import { freshScreenLayout } from '../../lib/components/FreshScreen';
 import { TabIcon } from '../../lib/components/TabIcon';
@@ -88,6 +88,26 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
+// The Luvkush account keeps only the Dashboard and, below it, Stock and Inventory: Finance and everything under it
+// leave the side panel. Stock and Inventory is taken from Finance's own list so its label and icon never drift.
+function stockOnlyNav(items: WebNavItem[]): WebNavItem[] {
+  const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
+  return stock ? [items[0], stock] : [items[0]];
+}
+
+// The All In One Abroad account lists Stock and Inventory right below the Dashboard, moved out of Finance; everything
+// else in the panel stays as it is.
+function stockBelowDashboardNav(items: WebNavItem[]): WebNavItem[] {
+  const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
+  if (!stock) return items;
+  const [dashboard, ...rest] = items;
+  return [
+    dashboard,
+    stock,
+    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => child !== stock) } : item)),
+  ];
+}
+
 const HIDDEN: [string, string][] = [
   ['rent', 'Rent & EMI'],
   ['rent-entry', 'Rent'],
@@ -122,9 +142,15 @@ export default function StoreLayout() {
   const { width } = useWindowDimensions();
   const isWideWeb = Platform.OS === 'web' && width >= WEB_SIDEBAR_MIN_WIDTH;
   const profile = useAuthStore((state) => state.profile);
-  const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
-  const navItems = useMemo(() => (vehicles ? vehicleNav(NAV_ITEMS) : NAV_ITEMS), [vehicles]);
-  const phoneNavItems = useMemo(() => (vehicles ? vehicleNav(PHONE_NAV_ITEMS) : PHONE_NAV_ITEMS), [vehicles]);
+  const accountName = profile?.business_name?.trim() || profile?.full_name;
+  const vehicles = sellsVehicles(accountName);
+  const stockOnly = isLuvkush(accountName);
+  const stockUnderDashboard = isAllInOneAbroad(accountName);
+  const [navItems, phoneNavItems] = useMemo(() => {
+    const shape = (base: WebNavItem[]) =>
+      stockOnly ? stockOnlyNav(base) : stockUnderDashboard ? stockBelowDashboardNav(base) : vehicles ? vehicleNav(base) : base;
+    return [shape(NAV_ITEMS), shape(PHONE_NAV_ITEMS)];
+  }, [vehicles, stockOnly, stockUnderDashboard]);
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
@@ -149,13 +175,27 @@ export default function StoreLayout() {
         name="company-dashboard"
         options={{ title: 'Dashboard', tabBarIcon: ({ color, focused }) => <TabIcon name="grid" color={color} focused={focused} /> }}
       />
+      {/* On the Luvkush account the phone's bottom bar follows the side panel: Finance is out, Stock and Inventory
+          takes its place beside the Dashboard. */}
       <Tabs.Screen
         name="finance"
-        options={{ title: 'Finance', tabBarIcon: ({ color, focused }) => <TabIcon name="wallet" color={color} focused={focused} /> }}
+        options={
+          stockOnly
+            ? { href: null, title: 'Finance' }
+            : { title: 'Finance', tabBarIcon: ({ color, focused }) => <TabIcon name="wallet" color={color} focused={focused} /> }
+        }
       />
-      {HIDDEN.map(([name, title]) => (
-        <Tabs.Screen key={name} name={name} options={{ href: null, title: vehicles && name === 'inventory' ? 'Inventory' : title }} />
-      ))}
+      {HIDDEN.map(([name, title]) =>
+        stockOnly && name === 'inventory' ? (
+          <Tabs.Screen
+            key={name}
+            name={name}
+            options={{ title, tabBarIcon: ({ color, focused }) => <TabIcon name="cube" color={color} focused={focused} /> }}
+          />
+        ) : (
+          <Tabs.Screen key={name} name={name} options={{ href: null, title: vehicles && name === 'inventory' ? 'Inventory' : title }} />
+        )
+      )}
     </Tabs>
   );
 
