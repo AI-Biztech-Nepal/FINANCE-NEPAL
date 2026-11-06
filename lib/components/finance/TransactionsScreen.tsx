@@ -922,11 +922,6 @@ function TransactionForm({
   // for a bill, same as Quick Payment already requires a real customer.
   // Only ever set by actually picking a saved contact below, never typing.
   const [customerId, setCustomerId] = useState<string | null>(initial?.customer_id ?? null);
-  // The Sale form's Lead block: a Referral picks from every saved customer and vendor (one list), the buyer left out.
-  const referrers = useMemo(
-    () => customers.filter((c) => c.id !== customerId).map(({ id, name, phone }) => ({ id, name, phone })),
-    [customers, customerId]
-  );
   const [note, setNote] = useState(initial?.note ?? '');
   const [bankAccountId, setBankAccountId] = useState<string | null>(initial?.bank_account_id ?? null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
@@ -1764,6 +1759,91 @@ function TransactionForm({
     return options;
   }, [vendorSuggestions, vendorFocused, isBill, partyName, customerId, customers, type, partyTypeName]);
 
+  // The Sale form's Lead block, Referral: the same suggestion box as the Customer field - saved customers and vendors
+  // (they share one list), phone contacts, and "Add ... as new customer" - with the buyer themselves left out.
+  const [referrerFocused, setReferrerFocused] = useState(false);
+  const referrerPool = useMemo(() => customers.filter((c) => c.id !== customerId), [customers, customerId]);
+  const referrerSaved = referrerPool.some((c) => c.name.trim().toLowerCase() === leadNote.trim().toLowerCase());
+  const referrerSuggestions = useMemo<CustomerSuggestion[]>(() => {
+    if (!referrerFocused || leadSource !== 'referral' || referrerSaved) return [];
+    const q = leadNote.trim();
+    return buildCustomerSuggestions(referrerPool, phoneContacts.contacts, q, q ? 6 : 8, true);
+  }, [referrerFocused, leadSource, referrerSaved, leadNote, referrerPool, phoneContacts.contacts]);
+  const referrerOptions = useMemo<SuggestOption[]>(() => {
+    const options: SuggestOption[] = referrerSuggestions.map((s) => ({
+      key: s.key,
+      label: s.name,
+      hint: s.customer ? s.phone : 'From contacts',
+      sub: s.customer ? typeOf(s.customer) : null,
+    }));
+    const typed = leadNote.trim();
+    if (referrerFocused && leadSource === 'referral' && typed && !referrerSaved) {
+      options.push({ key: ADD_PARTY_KEY, label: `Add "${typed}" as new customer`, kind: 'add' });
+    }
+    return options;
+  }, [referrerSuggestions, referrerFocused, leadSource, leadNote, referrerSaved, partyTypeName]);
+
+  /** Saves a person the referral names - from the phone's contacts or typed in - as a customer, after the same
+   * confirmation the Customer field asks, and takes their name. Cancelled: the typed name is dropped. */
+  async function addReferrer(name: string, phone: string | null) {
+    const existing = phone ? customers.find((c) => c.phone === phone) : undefined;
+    if (existing) {
+      setLeadNote(existing.name);
+      return;
+    }
+    const asked = await askNewParty({ name, kind: 'customer' });
+    if (!asked) {
+      setLeadNote('');
+      return;
+    }
+    try {
+      const created = await createCustomer.mutateAsync({ owner_id: userId, name: asked.name, phone, ...withType(asked) });
+      setLeadNote(created.name);
+    } catch (err) {
+      showAlert('Could not add customer', getErrorMessage(err));
+    }
+  }
+
+  const referralField = (accentColor: string) => (
+    <SuggestInput
+      value={leadNote}
+      onChangeText={setLeadNote}
+      options={referrerOptions}
+      onSelectOption={async (opt) => {
+        if (opt.key === ADD_PARTY_KEY) {
+          await addReferrer(tidyName(leadNote.trim()), null);
+          return;
+        }
+        const s = referrerSuggestions.find((x) => x.key === opt.key);
+        if (!s) return;
+        if (s.customer) setLeadNote(s.name);
+        else await addReferrer(s.name, s.phone);
+      }}
+      onFocus={() => setReferrerFocused(true)}
+      onBlur={() => setReferrerFocused(false)}
+      enterAddsNew
+      showWhenEmpty
+      placeholder="Referred by - pick a customer or vendor, or type a name"
+      accessibilityLabel="Referred by"
+      accent={accentColor}
+      compact
+      inputClassName="rounded-lg px-3 py-2.5 text-xs font-semibold text-gray-900"
+      inputStyle={[
+        { borderWidth: 1, borderColor: referrerFocused ? accentColor : '#D1D5DB', backgroundColor: '#FFFFFF' },
+        referrerFocused ? { boxShadow: `0 0 0 3px ${accentColor}29` } : null,
+        { outlineStyle: 'none' } as object,
+      ]}
+      adornmentWidth={54}
+      adornment={
+        referrerSaved ? (
+          <Ionicons name="checkmark-circle" size={16} color={accentColor} />
+        ) : leadNote.trim() ? (
+          <Text className="text-[10px] font-bold capitalize text-gray-400">New</Text>
+        ) : null
+      }
+    />
+  );
+
   useEffect(() => {
     if (!desktopWeb || !isBill) return;
     const last = items[items.length - 1];
@@ -2095,7 +2175,7 @@ function TransactionForm({
                   <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent={accent} serviceNames={serviceNames} bought={type === 'purchase'} />
                 )}
                 {shop && type === 'sale' && (
-                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} parties={referrers} />
+                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} referralField={referralField(accent)} />
                 )}
                 <View
                   className="flex-row flex-wrap border-t border-gray-200 bg-gray-50 px-5 py-4"
@@ -2519,7 +2599,7 @@ function TransactionForm({
             )}
             {shop && type === 'sale' && (
               <View className="mt-3">
-                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed parties={referrers} />
+                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed referralField={referralField('#EA580C')} />
               </View>
             )}
             <TextInput
