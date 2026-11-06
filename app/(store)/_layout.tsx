@@ -88,17 +88,26 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
-// The All In One Abroad account (the Luvkush login) has the whole side panel, with Stock and Inventory right below the
-// Dashboard instead of inside Finance; everything else stays where it is. Stock and Inventory is taken from Finance's own
-// list so its label and icon never drift.
-function stockBelowDashboardNav(items: WebNavItem[]): WebNavItem[] {
+// Sales and Purchase as the Finance page has them (each opens a new bill), taken from its list so label, icon and link
+// never drift. The side panel leaves them out for most accounts - they are buttons on the Day Book.
+const SALE_AND_PURCHASE_NAV: WebNavItem[] = financeShortcuts('/(store)')
+  .filter((s) => s.key === 'sales' || s.key === 'purchase')
+  .map(({ href, label, icon }) => ({ href, label, icon }));
+
+// The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
+// Dashboard instead of inside Finance: Stock and Inventory, then Sales and Purchase. Everything else stays where it is.
+// Stock and Inventory is taken from Finance's own list so its label and icon never drift.
+function shopNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
   if (!stock) return items;
+  // Moved, not copied: on the phone's list Sales and Purchase are also Finance's children, so they leave it.
+  const moved = new Set([stock.href, ...SALE_AND_PURCHASE_NAV.map((item) => item.href)]);
   const [dashboard, ...rest] = items;
   return [
     dashboard,
     stock,
-    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => child !== stock) } : item)),
+    ...SALE_AND_PURCHASE_NAV,
+    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !moved.has(child.href)) } : item)),
   ];
 }
 
@@ -138,12 +147,11 @@ export default function StoreLayout() {
   const profile = useAuthStore((state) => state.profile);
   const accountName = profile?.business_name?.trim() || profile?.full_name;
   const vehicles = sellsVehicles(accountName);
-  const stockUnderDashboard = isAllInOneAbroad(accountName);
+  const shop = isAllInOneAbroad(accountName);
   const [navItems, phoneNavItems] = useMemo(() => {
-    const shape = (base: WebNavItem[]) =>
-      stockUnderDashboard ? stockBelowDashboardNav(base) : vehicles ? vehicleNav(base) : base;
+    const shape = (base: WebNavItem[]) => (shop ? shopNav(base) : vehicles ? vehicleNav(base) : base);
     return [shape(NAV_ITEMS), shape(PHONE_NAV_ITEMS)];
-  }, [vehicles, stockUnderDashboard]);
+  }, [vehicles, shop]);
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
