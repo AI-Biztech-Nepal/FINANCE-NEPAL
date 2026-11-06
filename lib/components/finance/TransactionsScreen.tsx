@@ -5,7 +5,7 @@ import { KeyboardAwareSectionList } from 'react-native-keyboard-aware-scroll-vie
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useRole } from '../../hooks/useAuth';
-import { sellsVehicles } from '../../utils/accountFeatures';
+import { isAllInOneAbroad, sellsVehicles } from '../../utils/accountFeatures';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
 import { useConfirmNewParty, withType } from './NewPartyConfirm';
 import { highlightText } from './Highlight';
@@ -799,6 +799,9 @@ function TransactionForm({
   // A vehicle account's Purchase bill has a Model No. beside each item.
   const profile = useAuthStore((state) => state.profile);
   const withModel = type === 'purchase' && sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  // The All In One Abroad account sells goods only: its Sale and Purchase bills have no Service table. Every other
+  // account keeps it.
+  const hideServices = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
   const createTx = useSupabaseInsert('business_transactions');
   const { confirm: confirmSave, dialog: confirmDialog } = useConfirmSave();
   // A new customer / vendor made from a typed name is checked first, with its name editable.
@@ -2052,7 +2055,7 @@ function TransactionForm({
               onExit={() => discountRef.current?.focus()}
               footer={
                 <>
-                {(
+                {!hideServices && (
                   <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent={accent} serviceNames={serviceNames} bought={type === 'purchase'} />
                 )}
                 <View
@@ -2470,7 +2473,7 @@ function TransactionForm({
               <Text className="text-sm font-bold text-gray-900">G. Total</Text>
               <Text className="text-base font-extrabold text-gray-900">NPR {formatMoney(grandTotal)}</Text>
             </View>
-            {(
+            {!hideServices && (
               <View className="mt-3">
                 <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent="#EA580C" serviceNames={serviceNames} bought={type === 'purchase'} />
               </View>
