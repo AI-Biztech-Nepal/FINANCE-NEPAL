@@ -99,8 +99,11 @@ const SALE_AND_PURCHASE_NAV: WebNavItem[] = SALE_AND_PURCHASE.map(({ key, href, 
   icon,
 }));
 
+// Leads: the people being followed up (see LeadsScreen) - a page of the All In One Abroad account only.
+const LEADS_NAV: WebNavItem = { href: '/(store)/leads', label: 'Leads', icon: 'megaphone' };
+
 // The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
-// Dashboard instead of inside Finance: Stock and Inventory, then Sales and Purchase. Everything else stays where it is.
+// Dashboard instead of inside Finance: Stock and Inventory, then Sales, Purchase and Leads. Everything else stays where it is.
 // Stock and Inventory is taken from Finance's own list so its label and icon never drift.
 function shopNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
@@ -112,6 +115,7 @@ function shopNav(items: WebNavItem[]): WebNavItem[] {
     dashboard,
     stock,
     ...SALE_AND_PURCHASE_NAV,
+    LEADS_NAV,
     ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !moved.has(child.href)) } : item)),
   ];
 }
@@ -124,6 +128,7 @@ const HIDDEN: [string, string][] = [
   ['customer/[id]', 'Ledger'],
   ['transactions', 'Statement'],
   ['sales', 'Sales'],
+  ['leads', 'Leads'],
   // Stock and Inventory is one of Finance's pages now (side panel, and a tile on the Finance page on a phone). A vehicle
   // account has it as Inventory, and Stock (only what is in hand) in Finance - see vehicleNav.
   ['inventory', 'Stock and Inventory'],

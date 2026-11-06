@@ -53,6 +53,35 @@ export interface Product {
   updated_at: string;
 }
 
+export type LeadSource = 'walk_in' | 'website' | 'facebook' | 'tiktok' | 'referral' | 'other';
+export type LeadStatus = 'new' | 'contacted' | 'interested' | 'converted' | 'lost';
+
+/** One contact with a lead, kept in the lead's `history` (oldest first). */
+export interface LeadHistoryEntry {
+  kind: 'call' | 'whatsapp' | 'visit' | 'note';
+  note: string;
+  at: string;
+}
+
+/** A person being followed up (0029). Shown on the All In One Abroad account's Leads page. */
+export interface Lead {
+  id: string;
+  owner_id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  source: LeadSource;
+  /** Who referred them (Referral) or the detail typed in (Other). */
+  source_note: string | null;
+  interested_in: string | null;
+  status: LeadStatus;
+  /** The day to get back to them, 'YYYY-MM-DD'. */
+  follow_up_on: string | null;
+  history: LeadHistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
 // A name (and its last-used rate) typed into Sale/Purchase's item picker
 // that isn't a real product in the reseller's marketplace catalog - kept so
 // the picker can offer it again next time, without needing (or being
@@ -293,6 +322,7 @@ export interface Database {
     Tables: {
       profiles: { Row: Profile; Insert: Partial<Profile>; Update: Partial<Profile>; Relationships: [] };
       products: { Row: Product; Insert: Partial<Product>; Update: Partial<Product>; Relationships: [] };
+      leads: { Row: Lead; Insert: Partial<Lead>; Update: Partial<Lead>; Relationships: [] };
       customers: { Row: Customer; Insert: Partial<Customer>; Update: Partial<Customer>; Relationships: [] };
       party_types: { Row: PartyType; Insert: Partial<PartyType>; Update: Partial<PartyType>; Relationships: [] };
       finance_items: { Row: FinanceItem; Insert: Partial<FinanceItem>; Update: Partial<FinanceItem>; Relationships: [] };
