@@ -1,16 +1,19 @@
 // lib/components/finance/LeadsScreen.tsx
 //
-// Leads, kept simple: the customer's name and how they found the shop. A lead is written here by the Lead block of
-// the Record Sale form (see recordLeadFromSale); this page only lists them.
+// Leads, kept simple: the customer's name, how they found the shop, and everything they have bought - every sale, not
+// just the latest. A lead is written here by the Lead block of the Record Sale form (see recordLeadFromSale); this page
+// only lists them.
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../hooks/useAuth';
 import { useSupabaseDelete, useSupabaseQuery } from '../../hooks/useSupabase';
-import { BookPage, ToolbarSearch, useBookLayout } from './BookKit';
+import { BookPage, ToolbarSearch, money, useBookLayout } from './BookKit';
 import { LEAD_SOURCES } from './leadKit';
 import { showAlert, getErrorMessage } from '../../utils/alert';
-import type { Lead, LeadSource } from '../../../types/database.types';
+import { itemNamesOf } from '../../utils/accountFeatures';
+import { toBsHistoryLabel } from '../../utils/nepaliDate';
+import type { BusinessTransaction, Lead, LeadSource } from '../../../types/database.types';
 
 const SOURCE = Object.fromEntries(LEAD_SOURCES.map((s) => [s.key, s])) as Record<LeadSource, (typeof LEAD_SOURCES)[number]>;
 
@@ -27,6 +30,8 @@ const outlined = (icon: IconName, filled: boolean): IconName => {
 /** How they found the shop: "TikTok", or "Referral · Ram Sharma" with who referred them. */
 const howOf = (l: Lead) => (l.source_note ? `${SOURCE[l.source].label} · ${l.source_note}` : SOURCE[l.source].label);
 
+const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
+
 export function LeadsScreen() {
   const layout = useBookLayout();
   const userId = useAuthStore((state) => state.profile?.id);
@@ -35,11 +40,36 @@ export function LeadsScreen() {
     all: true,
     enabled: !!userId,
   });
+  const salesQ = useSupabaseQuery('business_transactions', {
+    filters: userId ? { owner_id: userId, type: 'sale' } : {},
+    all: true,
+    enabled: !!userId,
+  });
+  // Only to find the saved customer of a lead that was written without one (matched by name, as the CRM page does).
+  const customersQ = useSupabaseQuery('customers', {
+    filters: userId ? { owner_id: userId } : {},
+    columns: 'id,name',
+    all: true,
+    enabled: !!userId,
+  });
   const deleteLead = useSupabaseDelete('leads');
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<Tab>('all');
 
   const leads: Lead[] = useMemo(() => [...((data ?? []) as Lead[])].sort((a, b) => b.created_at.localeCompare(a.created_at)), [data]);
+
+  // Every sale each person has made, newest first - not only the one that last touched their lead.
+  const purchasesOf = useMemo(() => {
+    const sales = new Map<string, BusinessTransaction[]>();
+    for (const s of (salesQ.data ?? []) as BusinessTransaction[]) {
+      if (!s.customer_id) continue;
+      sales.set(s.customer_id, [...(sales.get(s.customer_id) ?? []), s]);
+    }
+    const dateOf = (t: BusinessTransaction) => t.bill_date ?? t.created_at;
+    for (const list of sales.values()) list.sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || b.created_at.localeCompare(a.created_at));
+    const byName = new Map(((customersQ.data ?? []) as { id: string; name: string }[]).map((c) => [norm(c.name), c.id]));
+    return (l: Lead): BusinessTransaction[] => sales.get(l.customer_id ?? byName.get(norm(l.name)) ?? '') ?? [];
+  }, [salesQ.data, customersQ.data]);
   const q = search.trim().toLowerCase();
   const shown = leads.filter(
     (l) => (tab === 'all' || l.source === tab) && (!q || l.name.toLowerCase().includes(q) || howOf(l).toLowerCase().includes(q))
@@ -121,11 +151,29 @@ export function LeadsScreen() {
         <View className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           {shown.map((l, i) => {
             const s = SOURCE[l.source];
+            const bought = purchasesOf(l);
             return (
               <View key={l.id} className="flex-row items-center px-4 py-3.5" style={{ gap: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: '#F3F4F6' }}>
-                <Text className="text-[15px] font-semibold text-gray-900" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
-                  {l.name}
-                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text className="text-[15px] font-semibold text-gray-900" numberOfLines={1}>
+                    {l.name}
+                  </Text>
+                  {bought.length > 0 && (
+                    <View className="mt-1.5" style={{ gap: 3 }}>
+                      <Text className="text-[11px] font-semibold text-gray-400">
+                        {bought.length} {bought.length === 1 ? 'purchase' : 'purchases'}
+                      </Text>
+                      {bought.map((tx) => (
+                        <View key={tx.id} className="flex-row items-center justify-between" style={{ gap: 10 }}>
+                          <Text className="text-xs text-gray-600" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
+                            {itemNamesOf(tx.items) || 'Sale'} · {toBsHistoryLabel(tx.bill_date ?? tx.created_at)}
+                          </Text>
+                          <Text className="text-xs font-semibold text-gray-700">NPR {money(tx.amount)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
                 <View className="flex-row items-center rounded-full px-2.5 py-1" style={{ gap: 5, backgroundColor: s.bg, flexShrink: 0, maxWidth: '55%' }}>
                   <Ionicons name={s.icon} size={12} color={s.color} />
                   <Text className="text-xs font-semibold" style={{ color: s.color }} numberOfLines={1}>
