@@ -9,13 +9,16 @@
 // lead being followed up. The CRM details - source, status, follow-up, history - live on the `leads` table; a customer
 // with no row there is "Not tagged" until a source is picked. Tapping Call or WhatsApp logs it in the history.
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../hooks/useAuth';
 import { useSupabaseDelete, useSupabaseInsert, useSupabaseQuery, useSupabaseUpdate } from '../../hooks/useSupabase';
 import { BookPage, BookTable, ToolbarButton, ToolbarSearch, money, useBookLayout, type BookColumn } from './BookKit';
 import { SelectDropdown } from './SelectDropdown';
-import { CONTACT_KINDS, FOLLOW_UPS, HISTORY_KINDS, LEAD_SOURCES, LEAD_STATUSES, dayLabel, inDays, sourceNeedsNote, waNumber } from './leadKit';
+import { HISTORY_KINDS, LEAD_SOURCES, LEAD_STATUSES, dayLabel, inDays, sourceNeedsNote, waNumber } from './leadKit';
+import { CustomerProfile } from './CustomerProfile';
+import { norm, type CrmForm, type CrmRow } from './crmKit';
 import { adStringToBs, bsDaysInMonth, bsToAdString, toBsHistoryLabel } from '../../utils/nepaliDate';
 import { localTodayIso } from '../../utils/localDate';
 import { showAlert, getErrorMessage } from '../../utils/alert';
@@ -31,7 +34,6 @@ const SOURCE_OPTIONS = LEAD_SOURCES.map((s) => ({ key: s.key, label: s.label, ic
 const PICKABLE_STATUSES = LEAD_STATUSES.filter((s) => s.key !== 'converted'); // Converted is what a customer is once a sale stands
 const CARD_SHADOW = { boxShadow: '0 1px 2px rgba(16,24,40,0.06)' } as object;
 
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
 const isOpen = (status: LeadStatus) => status !== 'converted' && status !== 'lost';
 
 /** A timestamp as the day it was on this computer, 'YYYY-MM-DD'. */
@@ -61,41 +63,6 @@ function shortNPR(n: number): string {
   if (n >= 1e3) return `${trim(n / 1e3)}K`;
   return String(Math.round(n));
 }
-
-interface CrmRow {
-  key: string;
-  lead: Lead | null;
-  customerId: string | null;
-  name: string;
-  phone: string;
-  address: string;
-  source: LeadSource | null;
-  sourceNote: string;
-  /** Has a Sale bill: Converted, and it cannot be changed by hand. */
-  bought: boolean;
-  status: LeadStatus;
-  followUp: string | null;
-  last: LeadHistoryEntry | null;
-  amount: number;
-  createdAt: string;
-  referred: number;
-}
-
-interface Form {
-  name: string;
-  phone: string;
-  address: string;
-  source: LeadSource | '';
-  source_note: string;
-  interested_in: string;
-  status: LeadStatus;
-  follow_up_on: string;
-}
-const EMPTY: Form = { name: '', phone: '', address: '', source: '', source_note: '', interested_in: '', status: 'new', follow_up_on: '' };
-const formOf = (r: CrmRow | null): Form =>
-  r
-    ? { name: r.name, phone: r.phone, address: r.address, source: r.source ?? '', source_note: r.sourceNote, interested_in: r.lead?.interested_in ?? '', status: r.status, follow_up_on: r.followUp ?? '' }
-    : EMPTY;
 
 function Card({ children, style }: { children: React.ReactNode; style?: object }) {
   return (
@@ -141,44 +108,6 @@ function FilterButton({ label, active }: { label: string; active?: boolean }) {
   );
 }
 
-function Chip({ label, on, onPress, icon }: { label: string; on: boolean; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      className="flex-row items-center rounded-lg px-3 py-2"
-      style={{ gap: 6, borderWidth: 1.5, borderColor: on ? BLUE : '#E5E7EB', backgroundColor: on ? '#EFF6FF' : '#fff' }}
-    >
-      {!!icon && <Ionicons name={icon} size={15} color={on ? BLUE : '#6B7280'} />}
-      <Text className="text-xs font-bold" style={{ color: on ? BLUE : '#4B5563' }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Field({ label, value, onChange, placeholder, phone, multiline }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; phone?: boolean; multiline?: boolean }) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <View className="mb-3">
-      <Text className="mb-1 text-[11px] font-bold tracking-wide text-gray-500">{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
-        keyboardType={phone ? 'phone-pad' : undefined}
-        multiline={multiline}
-        className="rounded-lg bg-white px-3 py-2.5 text-sm text-gray-900"
-        style={[{ borderWidth: 1, borderColor: focused ? BLUE : '#D1D5DB' }, multiline ? { minHeight: 64, textAlignVertical: 'top' } : null, { outlineStyle: 'none' } as object]}
-      />
-    </View>
-  );
-}
-
 function IconButton({ icon, color, bg, label, onPress, disabled }: { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string; label: string; onPress: () => void; disabled?: boolean }) {
   return (
     <Pressable
@@ -210,9 +139,7 @@ export function CrmScreen() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [referrer, setReferrer] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ row: CrmRow | null; form: Form; history: LeadHistoryEntry[] } | null>(null);
-  const [logKind, setLogKind] = useState<LeadHistoryEntry['kind']>('call');
-  const [logNote, setLogNote] = useState('');
+  const [drawer, setDrawer] = useState<{ key: string | null; customerId: string | null; patch?: Partial<CrmForm>; n: number } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const today = localTodayIso();
@@ -327,12 +254,8 @@ export function CrmScreen() {
   const chipRows = (k: SourceFilter) => rows.filter((r) => matchesSource(r, k));
 
   // ---- writing --------------------------------------------------------------------------------------------------
-  const openDialog = (row: CrmRow | null, patch?: Partial<Form>) => {
-    setLogKind('call');
-    setLogNote('');
-    setEditing({ row, form: { ...formOf(row), ...patch }, history: row?.lead?.history ?? [] });
-  };
-
+  const openProfile = (row: CrmRow | null, opts?: { patch?: Partial<CrmForm> }) =>
+    setDrawer({ key: row?.key ?? null, customerId: row?.customerId ?? null, patch: opts?.patch, n: Date.now() });
   /** Saves changes to a row's lead record. A customer with none gets one, but only once a source is chosen. */
   async function saveRow(row: CrmRow, patch: Partial<Lead>): Promise<boolean> {
     if (!userId) return false;
@@ -361,7 +284,7 @@ export function CrmScreen() {
   const changeSource = (row: CrmRow, key: LeadSource) => {
     if (key === row.source) return;
     // Referral and Other need a few words more (who, or where), so they open the profile with the choice filled in.
-    if (sourceNeedsNote(key)) openDialog(row, { source: key });
+    if (sourceNeedsNote(key)) openProfile(row, { patch: { source: key } });
     else void saveRow(row, { source: key, source_note: null });
   };
 
@@ -385,11 +308,29 @@ export function CrmScreen() {
     }
   };
 
-  async function saveDialog() {
-    if (!editing || !userId || busy) return;
-    const f = editing.form;
-    if (!f.name.trim()) return showAlert('Add a name', 'Enter the customer’s name.');
-    if (!f.source) return showAlert('Pick where they came from', 'Choose how this customer found the shop under Lead from.');
+  // The profile that is open (a drawer): a customer's key, or none for "Add Customer". Opening another one starts it fresh.
+  const profileRow: CrmRow | null = drawer
+    ? rows.find((r) => r.key === drawer.key) ?? (drawer.customerId ? rows.find((r) => r.customerId === drawer.customerId) ?? null : null)
+    : null;
+
+  const purchasesOf = (row: CrmRow | null): BusinessTransaction[] =>
+    row?.customerId
+      ? ((salesQ.data ?? []) as BusinessTransaction[])
+          .filter((t) => t.type === 'sale' && t.customer_id === row.customerId)
+          .sort((a, b) => (b.bill_date ?? b.created_at).localeCompare(a.bill_date ?? a.created_at))
+      : [];
+
+  /** Saves the profile's form: the lead record, and the customer's own details when it is a saved customer. */
+  async function saveForm(row: CrmRow | null, f: CrmForm): Promise<boolean> {
+    if (!userId || busy) return false;
+    if (!f.name.trim()) {
+      showAlert('Add a name', 'Enter the customer’s name.');
+      return false;
+    }
+    if (!f.source) {
+      showAlert('Pick where they came from', 'Choose how this customer found the shop under Lead from.');
+      return false;
+    }
     setBusy(true);
     try {
       const values = {
@@ -399,44 +340,48 @@ export function CrmScreen() {
         source: f.source,
         source_note: sourceNeedsNote(f.source) ? f.source_note.trim() || null : null,
         interested_in: f.interested_in.trim() || null,
-        status: editing.row?.bought ? ('converted' as const) : f.status,
-        follow_up_on: f.follow_up_on || null,
+        status: row?.bought ? ('converted' as const) : f.status,
+        follow_up_on: row?.followUp ?? null,
       };
-      if (editing.row?.lead) await updateLead.mutateAsync({ id: editing.row.lead.id, values });
-      else await createLead.mutateAsync({ owner_id: userId, customer_id: editing.row?.customerId ?? null, ...values, history: [] });
+      if (row?.lead) await updateLead.mutateAsync({ id: row.lead.id, values });
+      else await createLead.mutateAsync({ owner_id: userId, customer_id: row?.customerId ?? null, ...values, history: [] });
       // A saved customer's own details stay one record: changing them here changes them in the Ledger too.
-      if (editing.row?.customerId && (values.name !== editing.row.name || (values.phone ?? '') !== editing.row.phone || (values.address ?? '') !== editing.row.address)) {
-        await updateCustomer.mutateAsync({ id: editing.row.customerId, values: { name: values.name, phone: values.phone, address: values.address } });
+      if (row?.customerId && (values.name !== row.name || (values.phone ?? '') !== row.phone || (values.address ?? '') !== row.address)) {
+        await updateCustomer.mutateAsync({ id: row.customerId, values: { name: values.name, phone: values.phone, address: values.address } });
       }
-      setEditing(null);
+      if (!row) setDrawer(null); // a new customer: they are in the table now
+      return true;
     } catch (err) {
       showAlert('Could not save', getErrorMessage(err));
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function logContact() {
-    const lead = editing?.row?.lead;
-    if (!editing || !lead || busy) return;
-    const note = logNote.trim();
-    if (logKind === 'note' && !note) return showAlert('Write a note', 'Type what you want to remember.');
-    const history = [...editing.history, { kind: logKind, note, at: new Date().toISOString() }];
-    const status: LeadStatus = editing.form.status === 'new' && logKind !== 'note' ? 'contacted' : editing.form.status;
+  /** A contact goes into the history; a New lead that was called, messaged or visited is Contacted. */
+  async function addHistory(row: CrmRow, kind: LeadHistoryEntry['kind'], note: string): Promise<boolean> {
+    if (!row.lead || busy) return false;
     setBusy(true);
-    try {
-      await updateLead.mutateAsync({ id: lead.id, values: { history, status } });
-      setEditing((e) => (e ? { ...e, history, form: { ...e.form, status } } : e));
-      setLogNote('');
-    } catch (err) {
-      showAlert('Could not add to history', getErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    const ok = await saveRow(row, {
+      history: [...(row.lead.history ?? []), { kind, note, at: new Date().toISOString() }],
+      ...(row.lead.status === 'new' && kind !== 'note' ? { status: 'contacted' as const } : null),
+    });
+    setBusy(false);
+    return ok;
   }
 
-  function confirmDelete() {
-    const lead = editing?.row?.lead;
+  async function scheduleFollowUp(row: CrmRow, iso: string): Promise<boolean> {
+    setBusy(true);
+    const ok = await saveRow(row, { follow_up_on: iso });
+    setBusy(false);
+    return ok;
+  }
+
+  const removeEntry = (row: CrmRow, index: number) => void saveRow(row, { history: (row.lead?.history ?? []).filter((_, i) => i !== index) });
+
+  function removeLead(row: CrmRow) {
+    const lead = row.lead;
     if (!lead) return;
     showAlert('Remove from the CRM?', `${lead.name} and their follow-ups and history will be removed. Their sales and Ledger entry are not affected.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -446,7 +391,7 @@ export function CrmScreen() {
         onPress: async () => {
           try {
             await deleteLead.mutateAsync(lead.id);
-            setEditing(null);
+            setDrawer(null);
           } catch (err) {
             showAlert('Could not remove', getErrorMessage(err));
           }
@@ -537,7 +482,7 @@ export function CrmScreen() {
     <View className="flex-row" style={{ gap: 6 }}>
       <IconButton icon="call" color="#0369A1" bg="#E0F2FE" label={`Call ${r.name}`} onPress={() => reach(r, 'call')} disabled={!r.phone} />
       <IconButton icon="logo-whatsapp" color="#15803D" bg="#DCFCE7" label={`WhatsApp ${r.name}`} onPress={() => reach(r, 'whatsapp')} disabled={!r.phone} />
-      <IconButton icon="eye-outline" color="#4B5563" bg="#F3F4F6" label={`View ${r.name}`} onPress={() => openDialog(r)} />
+      <IconButton icon="eye-outline" color="#4B5563" bg="#F3F4F6" label={`View ${r.name}`} onPress={() => openProfile(r)} />
     </View>
   );
 
@@ -569,7 +514,6 @@ export function CrmScreen() {
     { key: 'today' as const, label: 'Today', color: '#1D4ED8', bg: '#EFF6FF' },
     { key: 'upcoming' as const, label: 'Upcoming', color: '#475569', bg: '#F1F5F9' },
   ];
-  const form = editing?.form;
   const sourceLabel = sourceFilter === 'all' ? 'Lead Source' : sourceFilter === 'needs' ? 'Not tagged' : SOURCE[sourceFilter].label;
   const statusLabel = statusFilter === 'all' ? 'Lead Status' : STATUS[statusFilter].label;
 
@@ -583,7 +527,7 @@ export function CrmScreen() {
             <Text className="text-[13px] font-semibold text-gray-700">Export</Text>
           </Pressable>
         )}
-        <ToolbarButton icon="add" label="Add Customer" onPress={() => openDialog(null)} />
+        <ToolbarButton icon="add" label="Add Customer" onPress={() => openProfile(null)} />
       </View>
 
       {/* Stat cards */}
@@ -659,14 +603,14 @@ export function CrmScreen() {
                       <Text className="text-[10px] font-bold" style={{ color: s.color }}>{s.label}</Text>
                     </View>
                   </View>
-                  <Pressable onPress={() => openDialog(r)}>
+                  <Pressable onPress={() => openProfile(r)}>
                     <Text className="mt-1 text-sm font-bold text-gray-900" numberOfLines={1}>{r.name}</Text>
                   </Pressable>
                   <Text className="text-xs text-gray-500" numberOfLines={1}>{r.lead?.interested_in || 'Follow up'}</Text>
                   <View className="mt-2 flex-row" style={{ gap: 6 }}>
                     <IconButton icon="checkmark" color="#047857" bg="#ECFDF5" label={`Mark follow-up with ${r.name} done`} onPress={() => markDone(r)} />
-                    <IconButton icon="calendar-outline" color="#4B5563" bg="#F3F4F6" label={`Reschedule ${r.name}`} onPress={() => openDialog(r)} />
-                    <IconButton icon="eye-outline" color="#4B5563" bg="#F3F4F6" label={`View ${r.name}`} onPress={() => openDialog(r)} />
+                    <IconButton icon="calendar-outline" color="#4B5563" bg="#F3F4F6" label={`Reschedule ${r.name}`} onPress={() => openProfile(r)} />
+                    <IconButton icon="eye-outline" color="#4B5563" bg="#F3F4F6" label={`View ${r.name}`} onPress={() => openProfile(r)} />
                   </View>
                 </View>
               ))
@@ -744,11 +688,11 @@ export function CrmScreen() {
           </Text>
         </Card>
       ) : layout.full ? (
-        <BookTable columns={columns} rows={list} rowKey={(r) => r.key} onRowPress={(r) => openDialog(r)} dense />
+        <BookTable columns={columns} rows={list} rowKey={(r) => r.key} onRowPress={(r) => openProfile(r)} dense />
       ) : (
         <View style={{ gap: 10 }}>
           {list.map((r) => (
-            <Pressable key={r.key} onPress={() => openDialog(r)} className="rounded-xl border border-gray-200 bg-white p-3.5" style={CARD_SHADOW}>
+            <Pressable key={r.key} onPress={() => openProfile(r)} className="rounded-xl border border-gray-200 bg-white p-3.5" style={CARD_SHADOW}>
               <View className="flex-row items-start justify-between" style={{ gap: 8 }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text className="text-[15px] font-bold text-gray-900" numberOfLines={1}>{r.name}</Text>
@@ -770,125 +714,33 @@ export function CrmScreen() {
         </View>
       )}
 
-      {/* A customer's profile: details, status, follow-up and the history of contacts */}
-      <Modal visible={!!editing} transparent animationType="fade" onRequestClose={() => setEditing(null)}>
-        <View className="flex-1 items-center justify-center bg-black/40 px-3 sm:px-6">
-          {editing && form && (
-            <View className="w-full rounded-2xl bg-white" style={{ maxWidth: 560, maxHeight: '92%', padding: 20, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' } as object}>
-              <View className="mb-3 flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">{editing.row ? editing.row.name : 'Add Customer'}</Text>
-                <Pressable onPress={() => setEditing(null)} hitSlop={8} accessibilityLabel="Close">
-                  <Ionicons name="close" size={24} color="#374151" />
-                </Pressable>
-              </View>
-              <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
-                <Field label="Name" value={form.name} onChange={(v) => setEditing((e) => (e ? { ...e, form: { ...e.form, name: v } } : e))} placeholder="Full name" />
-                <View className="flex-row" style={{ gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Phone" value={form.phone} onChange={(v) => setEditing((e) => (e ? { ...e, form: { ...e.form, phone: v } } : e))} placeholder="98XXXXXXXX" phone />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Field label="Address" value={form.address} onChange={(v) => setEditing((e) => (e ? { ...e, form: { ...e.form, address: v } } : e))} placeholder="Optional" />
-                  </View>
-                </View>
-                <Field label="Interested in" value={form.interested_in} onChange={(v) => setEditing((e) => (e ? { ...e, form: { ...e.form, interested_in: v } } : e))} placeholder="e.g. 3-piece luggage set, rice cooker" multiline />
-
-                <Text className="mb-1.5 text-[11px] font-bold tracking-wide text-gray-500">Lead from</Text>
-                <View className="mb-3 flex-row flex-wrap" style={{ gap: 8 }}>
-                  {LEAD_SOURCES.map((s) => (
-                    <Chip key={s.key} label={s.label} icon={s.icon} on={form.source === s.key} onPress={() => setEditing((e) => (e ? { ...e, form: { ...e.form, source: s.key } } : e))} />
-                  ))}
-                </View>
-                {sourceNeedsNote(form.source) && (
-                  <Field
-                    label={form.source === 'referral' ? 'Referred by' : 'Details'}
-                    value={form.source_note}
-                    onChange={(v) => setEditing((e) => (e ? { ...e, form: { ...e.form, source_note: v } } : e))}
-                    placeholder={form.source === 'referral' ? 'Who sent them' : 'e.g. signboard, Instagram'}
-                  />
-                )}
-
-                <Text className="mb-1.5 text-[11px] font-bold tracking-wide text-gray-500">Lead status</Text>
-                {editing.row?.bought ? (
-                  <Text className="mb-3 text-xs text-gray-500">Converted: this customer has bought, so the status is set automatically.</Text>
-                ) : (
-                  <View className="mb-3 flex-row flex-wrap" style={{ gap: 8 }}>
-                    {PICKABLE_STATUSES.map((s) => (
-                      <Chip key={s.key} label={s.label} on={form.status === s.key} onPress={() => setEditing((e) => (e ? { ...e, form: { ...e.form, status: s.key } } : e))} />
-                    ))}
-                  </View>
-                )}
-
-                <Text className="mb-1.5 text-[11px] font-bold tracking-wide text-gray-500">Follow up</Text>
-                <View className="mb-4 flex-row flex-wrap" style={{ gap: 8 }}>
-                  {FOLLOW_UPS.map((f) => {
-                    const iso = f.days == null ? '' : inDays(f.days);
-                    return <Chip key={f.label} label={f.label} on={form.follow_up_on === iso} onPress={() => setEditing((e) => (e ? { ...e, form: { ...e.form, follow_up_on: iso } } : e))} />;
-                  })}
-                  {!!form.follow_up_on && !FOLLOW_UPS.some((f) => f.days != null && inDays(f.days) === form.follow_up_on) && <Chip label={toBsHistoryLabel(form.follow_up_on)} on onPress={() => {}} />}
-                </View>
-
-                {!!editing.row?.lead && (
-                  <View className="mb-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <Text className="mb-2 text-[11px] font-bold tracking-wide text-gray-500">Contact history</Text>
-                    <View className="mb-2 flex-row flex-wrap" style={{ gap: 8 }}>
-                      {CONTACT_KINDS.map((k) => (
-                        <Chip key={k.key} label={k.label} icon={k.icon} on={logKind === k.key} onPress={() => setLogKind(k.key)} />
-                      ))}
-                    </View>
-                    <View className="flex-row items-center" style={{ gap: 8 }}>
-                      <TextInput
-                        value={logNote}
-                        onChangeText={setLogNote}
-                        placeholder={logKind === 'note' ? 'What do you want to remember?' : 'What was said (optional)'}
-                        placeholderTextColor="#9CA3AF"
-                        className="flex-1 rounded-lg bg-white px-3 py-2.5 text-sm text-gray-900"
-                        style={[{ borderWidth: 1, borderColor: '#D1D5DB' }, { outlineStyle: 'none' } as object]}
-                        onSubmitEditing={logContact}
-                      />
-                      <Pressable onPress={logContact} disabled={busy} className="rounded-lg px-3.5 py-2.5 disabled:opacity-50" style={{ backgroundColor: BLUE }}>
-                        <Text className="text-xs font-bold text-white">Add</Text>
-                      </Pressable>
-                    </View>
-                    {editing.history.length === 0 ? (
-                      <Text className="mt-3 text-xs text-gray-400">No contact logged yet.</Text>
-                    ) : (
-                      <View className="mt-3" style={{ gap: 8 }}>
-                        {[...editing.history].reverse().map((h, i) => {
-                          const kind = HISTORY_KINDS.find((k) => k.key === h.kind);
-                          return (
-                            <View key={`${h.at}-${i}`} className="flex-row" style={{ gap: 8 }}>
-                              <Ionicons name={kind?.icon ?? 'document-text'} size={15} color="#6B7280" style={{ marginTop: 1 }} />
-                              <View style={{ flex: 1 }}>
-                                <Text className="text-xs font-semibold text-gray-700">{kind?.label} · {dayLabel(h.at)}</Text>
-                                {!!h.note && <Text className="text-xs text-gray-500">{h.note}</Text>}
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                )}
-              </ScrollView>
-              <View className="mt-3 flex-row items-center border-t border-gray-100 pt-3" style={{ gap: 10 }}>
-                {!!editing.row?.lead && (
-                  <Pressable onPress={confirmDelete} className="rounded-xl border border-red-200 px-4 py-3">
-                    <Text className="text-sm font-bold text-red-600">Remove</Text>
-                  </Pressable>
-                )}
-                <View className="flex-1" />
-                <Pressable onPress={() => setEditing(null)} className="rounded-xl border border-gray-300 bg-white px-5 py-3">
-                  <Text className="text-sm font-bold text-gray-600">Cancel</Text>
-                </Pressable>
-                <Pressable onPress={saveDialog} disabled={busy} className="rounded-xl px-6 py-3 disabled:opacity-50" style={{ backgroundColor: '#1D4ED8' }}>
-                  <Text className="text-sm font-bold text-white">Save</Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
+      {/* A customer's profile: a drawer from the right, like Auto Stock Manager's */}
+      {drawer && (drawer.key === null || !!profileRow) && (
+        <CustomerProfile
+          key={drawer.n}
+          row={profileRow}
+          rows={rows}
+          purchases={purchasesOf(profileRow)}
+          startEditing={!!drawer.patch}
+          patch={drawer.patch}
+          busy={busy}
+          onClose={() => setDrawer(null)}
+          onOpen={(r) => openProfile(r)}
+          onSave={(f) => saveForm(profileRow, f)}
+          onStatus={(s) => profileRow && void saveRow(profileRow, { status: s })}
+          onContact={(k) => profileRow && reach(profileRow, k)}
+          onLog={(k, n) => (profileRow ? addHistory(profileRow, k, n) : Promise.resolve(false))}
+          onSchedule={(iso) => (profileRow ? scheduleFollowUp(profileRow, iso) : Promise.resolve(false))}
+          onDone={() => profileRow && markDone(profileRow)}
+          onClearFollowUp={() => profileRow && void saveRow(profileRow, { follow_up_on: null })}
+          onRemoveEntry={(i) => profileRow && removeEntry(profileRow, i)}
+          onRemove={() => profileRow && removeLead(profileRow)}
+          onOpenBill={(tx) => {
+            setDrawer(null);
+            router.push(`/(store)/transactions?type=sale&add=1&edit=${tx.id}` as never);
+          }}
+        />
+      )}
     </BookPage>
   );
 }
