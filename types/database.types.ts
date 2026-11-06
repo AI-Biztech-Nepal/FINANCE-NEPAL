@@ -84,6 +84,27 @@ export interface Lead {
   updated_at: string;
 }
 
+/** A prize on the website's wheel (0030). `weight` is its chance against the others; `stock` is how many can still be won. */
+export interface OfferPrize {
+  id: string;
+  owner_id: string;
+  name: string;
+  weight: number;
+  stock: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Someone who spun the wheel; one per mobile number (0030). */
+export interface OfferSpin {
+  id: string;
+  owner_id: string;
+  name: string;
+  phone: string;
+  prize: string;
+  created_at: string;
+}
+
 // A name (and its last-used rate) typed into Sale/Purchase's item picker
 // that isn't a real product in the reseller's marketplace catalog - kept so
 // the picker can offer it again next time, without needing (or being
@@ -325,6 +346,8 @@ export interface Database {
       profiles: { Row: Profile; Insert: Partial<Profile>; Update: Partial<Profile>; Relationships: [] };
       products: { Row: Product; Insert: Partial<Product>; Update: Partial<Product>; Relationships: [] };
       leads: { Row: Lead; Insert: Partial<Lead>; Update: Partial<Lead>; Relationships: [] };
+      offer_prizes: { Row: OfferPrize; Insert: Partial<OfferPrize>; Update: Partial<OfferPrize>; Relationships: [] };
+      offer_spins: { Row: OfferSpin; Insert: Partial<OfferSpin>; Update: Partial<OfferSpin>; Relationships: [] };
       customers: { Row: Customer; Insert: Partial<Customer>; Update: Partial<Customer>; Relationships: [] };
       party_types: { Row: PartyType; Insert: Partial<PartyType>; Update: Partial<PartyType>; Relationships: [] };
       finance_items: { Row: FinanceItem; Insert: Partial<FinanceItem>; Update: Partial<FinanceItem>; Relationships: [] };

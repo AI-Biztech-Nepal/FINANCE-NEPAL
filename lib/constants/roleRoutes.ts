@@ -19,9 +19,9 @@ import type { UserRole } from '../../types/database.types';
  * costs a redirect to home, a wrong one lands on an unknown route. */
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
   store: [
-    'bank-accounts', 'bank-balances', 'company-dashboard', 'customers', 'daybook', 'expense-report', 'finance',
-    'import-statement', 'inventory', 'leads', 'paid', 'party-report', 'profile', 'purchase-report', 'quick-payment', 'received',
-    'report', 'sales-report', 'to-give', 'to-receive', 'transactions', 'voucher',
+    'bank-accounts', 'bank-balances', 'company-dashboard', 'crm', 'customers', 'daybook', 'expense-report', 'finance',
+    'import-statement', 'inventory', 'leads', 'offers', 'paid', 'party-report', 'profile', 'purchase-report', 'quick-payment', 'received',
+    'report', 'sales-report', 'share', 'to-give', 'to-receive', 'transactions', 'visits', 'voucher',
   ],
 };
 
