@@ -88,11 +88,16 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
-// Sales and Purchase as the Finance page has them (each opens a new bill), taken from its list so label, icon and link
-// never drift. The side panel leaves them out for most accounts - they are buttons on the Day Book.
-const SALE_AND_PURCHASE_NAV: WebNavItem[] = financeShortcuts('/(store)')
-  .filter((s) => s.key === 'sales' || s.key === 'purchase')
-  .map(({ href, label, icon }) => ({ href, label, icon }));
+// Sales and Purchase as the Finance page has them, taken from its list so label and icon never drift. The side panel
+// leaves them out for most accounts - they are buttons on the Day Book. Purchase opens a new bill; Sales opens the
+// Sales page (the list of sales, with Record Sale on it - see SalesListScreen) instead.
+const SALE_AND_PURCHASE = financeShortcuts('/(store)').filter((s) => s.key === 'sales' || s.key === 'purchase');
+const SALE_AND_PURCHASE_FINANCE_HREFS = SALE_AND_PURCHASE.map((s) => s.href);
+const SALE_AND_PURCHASE_NAV: WebNavItem[] = SALE_AND_PURCHASE.map(({ key, href, label, icon }) => ({
+  href: key === 'sales' ? '/(store)/sales' : href,
+  label,
+  icon,
+}));
 
 // The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
 // Dashboard instead of inside Finance: Stock and Inventory, then Sales and Purchase. Everything else stays where it is.
@@ -101,7 +106,7 @@ function shopNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
   if (!stock) return items;
   // Moved, not copied: on the phone's list Sales and Purchase are also Finance's children, so they leave it.
-  const moved = new Set([stock.href, ...SALE_AND_PURCHASE_NAV.map((item) => item.href)]);
+  const moved = new Set([stock.href, ...SALE_AND_PURCHASE_FINANCE_HREFS]);
   const [dashboard, ...rest] = items;
   return [
     dashboard,
@@ -118,6 +123,7 @@ const HIDDEN: [string, string][] = [
   ['customers', 'Ledger'],
   ['customer/[id]', 'Ledger'],
   ['transactions', 'Statement'],
+  ['sales', 'Sales'],
   // Stock and Inventory is one of Finance's pages now (side panel, and a tile on the Finance page on a phone). A vehicle
   // account has it as Inventory, and Stock (only what is in hand) in Finance - see vehicleNav.
   ['inventory', 'Stock and Inventory'],

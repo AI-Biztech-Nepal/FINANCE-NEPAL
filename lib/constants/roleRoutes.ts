@@ -21,7 +21,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   store: [
     'bank-accounts', 'bank-balances', 'company-dashboard', 'customers', 'daybook', 'expense-report', 'finance',
     'import-statement', 'inventory', 'paid', 'party-report', 'profile', 'purchase-report', 'quick-payment', 'received',
-    'report', 'sales-report', 'to-give', 'to-receive', 'transactions', 'voucher',
+    'report', 'sales', 'sales-report', 'to-give', 'to-receive', 'transactions', 'voucher',
   ],
 };
 
