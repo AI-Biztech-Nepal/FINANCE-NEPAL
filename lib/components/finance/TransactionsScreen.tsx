@@ -922,6 +922,11 @@ function TransactionForm({
   // for a bill, same as Quick Payment already requires a real customer.
   // Only ever set by actually picking a saved contact below, never typing.
   const [customerId, setCustomerId] = useState<string | null>(initial?.customer_id ?? null);
+  // The Sale form's Lead block: a Referral picks from every saved customer and vendor (one list), the buyer left out.
+  const referrers = useMemo(
+    () => customers.filter((c) => c.id !== customerId).map(({ id, name, phone }) => ({ id, name, phone })),
+    [customers, customerId]
+  );
   const [note, setNote] = useState(initial?.note ?? '');
   const [bankAccountId, setBankAccountId] = useState<string | null>(initial?.bank_account_id ?? null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
@@ -2090,7 +2095,7 @@ function TransactionForm({
                   <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent={accent} serviceNames={serviceNames} bought={type === 'purchase'} />
                 )}
                 {shop && type === 'sale' && (
-                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} />
+                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} parties={referrers} />
                 )}
                 <View
                   className="flex-row flex-wrap border-t border-gray-200 bg-gray-50 px-5 py-4"
@@ -2514,7 +2519,7 @@ function TransactionForm({
             )}
             {shop && type === 'sale' && (
               <View className="mt-3">
-                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed />
+                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed parties={referrers} />
               </View>
             )}
             <TextInput
