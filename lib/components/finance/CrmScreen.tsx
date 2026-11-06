@@ -55,15 +55,6 @@ function bsMonth(back: 0 | 1): { start: string; end: string } | null {
   return { start: bsToAdString(year, month, 1), end: bsToAdString(year, month, bsDaysInMonth(year, month)) };
 }
 
-/** Short rupees for a chip: 4.5L, 1.2Cr, 12.5K. */
-function shortNPR(n: number): string {
-  const trim = (v: number) => String(Math.round(v * 10) / 10);
-  if (n >= 1e7) return `${trim(n / 1e7)}Cr`;
-  if (n >= 1e5) return `${trim(n / 1e5)}L`;
-  if (n >= 1e3) return `${trim(n / 1e3)}K`;
-  return String(Math.round(n));
-}
-
 function Card({ children, style }: { children: React.ReactNode; style?: object }) {
   return (
     <View className="rounded-xl border border-gray-200 bg-white" style={[CARD_SHADOW, style]}>
@@ -639,12 +630,11 @@ export function CrmScreen() {
         />
       </View>
 
-      {/* Quick filter by lead source: how many customers and what they have bought */}
+      {/* Quick filter by lead source: how many customers */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         {chips.map((c) => {
           const on = sourceFilter === c.key;
           const group = chipRows(c.key);
-          const amount = group.reduce((sum, r) => sum + r.amount, 0);
           const warn = c.key === 'needs' && group.length > 0;
           return (
             <Pressable
@@ -660,7 +650,6 @@ export function CrmScreen() {
               <View className="items-center justify-center rounded-full px-1.5" style={{ minWidth: 22, height: 20, backgroundColor: on ? 'rgba(255,255,255,0.28)' : warn ? '#FEF3C7' : '#F1F5F9' }}>
                 <Text className="text-[11px] font-bold" style={{ color: on ? '#fff' : warn ? '#B45309' : '#475569' }}>{group.length}</Text>
               </View>
-              {amount > 0 && <Text className="text-xs font-medium" style={{ color: on ? 'rgba(255,255,255,0.85)' : '#9CA3AF' }}>{shortNPR(amount)}</Text>}
             </Pressable>
           );
         })}
