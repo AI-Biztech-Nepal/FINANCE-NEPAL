@@ -16,7 +16,8 @@ import { useReportActions } from './PrintButton';
 import type { FeedItem } from './TransactionsScreen';
 import { tidyName } from '../../utils/nameCaps';
 import { useSupabaseQuery } from '../../hooks/useSupabase';
-import { itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemNamesOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { vehicleCosts, vehicleKey } from '../../utils/vehicleCost';
 import type { AccountTransfer, BusinessTransaction, BusinessTransactionType } from '../../../types/database.types';
 
@@ -192,7 +193,7 @@ export function TransactionsBook({
   );
 
   // A vehicle account's sale and purchase bills read with the item (car) on them in place of the remark.
-  const showItems = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const showItems = useFeature('finance.vehicles');
   const ownerId = useAuthStore((state) => state.ownerId);
   const owner: Record<string, string> = ownerId ? { owner_id: ownerId } : {};
   const { data: products } = useSupabaseQuery('products', { filters: owner, enabled: !!ownerId && showItems });

@@ -1,0 +1,57 @@
+{
+  "_readme": [
+    "Finance's part of the portal's feature catalogue and of the per-org backfill. The portal migration loads this; Finance does not run it.",
+    "features -> one row each for core.features (key, service_key = 'finance', name, description, requires, default_on).",
+    "backfill.orgs -> core.org_features rows with enabled = true, per org SLUG (slugs are the same in every environment; org ids are not).",
+    "backfill.also_on -> orgs that cannot be listed by name. Each rule is a query returning org ids; every org it returns gets the listed features enabled = true. Run these inside the migration, against the data as it is that day.",
+    "Everything not named by either gets no row, which reads as the feature's default_on (false for all three below) - so every org sees exactly what it sees today.",
+    "'Today' is: finance.vehicles / rent / emi on for vehicle accounts (finance.org_settings.sells_vehicles, or a business name that reads 'Deeva Auto'), off for everyone else. Nothing else in Finance is a feature (see FEATURE-INVENTORY.md).",
+    "finance.jageer is not here: it lives in the portal database (public.finance_apply_jageer_*) and belongs in the portal's own list."
+  ],
+  "service": "finance",
+  "features": [
+    {
+      "key": "finance.vehicles",
+      "name": "Vehicle accounts",
+      "description": "Names the vehicle on bills, ledgers and reports, adds a Model No. to purchase bills, and splits Stock (what is in hand) from Inventory (every vehicle).",
+      "requires": [],
+      "default_on": false
+    },
+    {
+      "key": "finance.rent",
+      "name": "Rent",
+      "description": "Give vehicles out on rent by the day. The daily rent is posted to the renter's ledger and counts as income.",
+      "requires": [],
+      "default_on": false
+    },
+    {
+      "key": "finance.emi",
+      "name": "EMI",
+      "description": "Sell or buy vehicles on monthly instalments, with a plan and a schedule for each vehicle.",
+      "requires": [],
+      "default_on": false
+    }
+  ],
+  "backfill": {
+    "orgs": {
+      "deeva-auto-enterprises": ["finance.vehicles", "finance.rent", "finance.emi"]
+    },
+    "also_on": [
+      {
+        "why": "Vehicle accounts: the old switch, finance.org_settings.sells_vehicles, and the business-name match the app used before it existed. Rent and EMI were shown to exactly these.",
+        "features": ["finance.vehicles", "finance.rent", "finance.emi"],
+        "org_ids_sql": "select org_id from finance.org_settings where sells_vehicles union select id from core.organizations where name ~* '\\ydee?va\\s+auto\\y'"
+      },
+      {
+        "why": "An org that already has rentals keeps the Rent page that holds them, even if it never had the menu item (the page was reachable by address).",
+        "features": ["finance.rent"],
+        "org_ids_sql": "select distinct owner_id from finance.rentals"
+      },
+      {
+        "why": "Same for EMI plans.",
+        "features": ["finance.emi"],
+        "org_ids_sql": "select distinct owner_id from finance.emi_plans"
+      }
+    ]
+  }
+}

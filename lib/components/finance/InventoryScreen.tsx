@@ -36,7 +36,8 @@ import { toBsHistoryLabel } from '../../utils/nepaliDate';
 import { localTodayIso } from '../../utils/localDate';
 import { compareItems, entryDay } from '../../utils/ledgerStatement';
 import { reportHtml, type PrintReport } from '../../utils/printReport';
-import { itemListOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemListOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { round2 } from '../../utils/money';
 import { highlightText } from './Highlight';
 import { tidyName } from '../../utils/nameCaps';
@@ -550,7 +551,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
     enabled: !!userId,
   });
   // A vehicle account reads each car's money - paid and still owed - where others read units sold and bought.
-  const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const vehicles = useFeature('finance.vehicles');
   const { data: vendorLedger } = useSupabaseQuery('vendor_ledger_entries', {
     filters: userId ? { owner_id: userId } : {},
     all: true,

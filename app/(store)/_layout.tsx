@@ -1,9 +1,8 @@
 // app/(store)/_layout.tsx
 import { useMemo } from 'react';
-import { Platform, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Platform, View, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
-import { useAuthStore } from '../../lib/hooks/useAuth';
-import { sellsVehicles } from '../../lib/utils/accountFeatures';
+import { useFeature, useFeaturesLoaded } from '../../lib/features/useFeatures';
 import { RoleGuard } from '../../lib/components/RoleGuard';
 import { freshScreenLayout } from '../../lib/components/FreshScreen';
 import { TabIcon } from '../../lib/components/TabIcon';
@@ -56,26 +55,35 @@ const NAV_ITEMS: WebNavItem[] = [
   },
 ];
 
-// A vehicle account also rents its cars out and sells them on EMI, and keeps Stock and Inventory as two lists: Stock
-// (only what is still in hand) stays one of Finance's pages, where Stock and Inventory was; Rent & EMI (EMI and Rent
-// nested under it) and then Inventory (every vehicle, in stock and sold) sit in the side panel, just below Dashboard.
-function vehicleNav(items: WebNavItem[]): WebNavItem[] {
+// What an organization's features add to the side panel. Vehicles: Stock and Inventory becomes two lists - Stock (only
+// what is still in hand) stays one of Finance's pages, where Stock and Inventory was, and Inventory (every vehicle, in
+// stock and sold) goes in the side panel just below Dashboard. Rent and EMI: Rent & EMI (the ones that are on, nested
+// under it) goes there too, ahead of Inventory.
+interface NavFeatures {
+  vehicles: boolean;
+  rent: boolean;
+  emi: boolean;
+}
+
+function rentEmiNav({ rent, emi }: NavFeatures): WebNavItem | null {
+  const emiItem: WebNavItem = { href: '/(store)/rent?tab=emi', label: 'EMI', icon: 'card' };
+  const rentItem: WebNavItem = { href: '/(store)/rent?tab=rent', label: 'Rent', icon: 'key' };
+  if (rent && emi) return { href: '/(store)/rent', label: 'Rent & EMI', icon: 'car', heading: true, children: [emiItem, rentItem] };
+  return emi ? emiItem : rent ? rentItem : null;
+}
+
+function featureNav(items: WebNavItem[], on: NavFeatures): WebNavItem[] {
   const stock: WebNavItem = { href: '/(store)/stock', label: 'Stock', icon: 'cube' };
+  const rentEmi = rentEmiNav(on);
   const own: WebNavItem[] = [
-    {
-      href: '/(store)/rent',
-      label: 'Rent & EMI',
-      icon: 'car',
-      heading: true,
-      children: [
-        { href: '/(store)/rent?tab=emi', label: 'EMI', icon: 'card' },
-        { href: '/(store)/rent?tab=rent', label: 'Rent', icon: 'key' },
-      ],
-    },
-    { href: '/(store)/inventory', label: 'Inventory', icon: 'layers' },
+    ...(rentEmi ? [rentEmi] : []),
+    ...(on.vehicles ? [{ href: '/(store)/inventory', label: 'Inventory', icon: 'layers' } as WebNavItem] : []),
   ];
+  if (!own.length) return items;
   const at = items.findIndex((item) => item.href.endsWith('/company-dashboard'));
-  return [...items.slice(0, at + 1), ...own, ...items.slice(at + 1)].map((item) =>
+  const merged = [...items.slice(0, at + 1), ...own, ...items.slice(at + 1)];
+  if (!on.vehicles) return merged;
+  return merged.map((item) =>
     item.children ? { ...item, children: item.children.map((child) => (child.href.endsWith('/inventory') ? stock : child)) } : item
   );
 }
@@ -88,7 +96,7 @@ const HIDDEN: [string, string][] = [
   ['customer/[id]', 'Ledger'],
   ['transactions', 'Statement'],
   // Stock and Inventory is one of Finance's pages now (side panel, and a tile on the Finance page on a phone). A vehicle
-  // account has it as Inventory, and Stock (only what is in hand) in Finance - see vehicleNav.
+  // account has it as Inventory, and Stock (only what is in hand) in Finance - see featureNav.
   ['inventory', 'Stock and Inventory'],
   ['stock', 'Stock'],
   ['quick-payment', 'Quick Payment'],
@@ -113,9 +121,11 @@ const HIDDEN: [string, string][] = [
 export default function StoreLayout() {
   const { width } = useWindowDimensions();
   const isWideWeb = Platform.OS === 'web' && width >= WEB_SIDEBAR_MIN_WIDTH;
-  const profile = useAuthStore((state) => state.profile);
-  const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
-  const navItems = useMemo(() => (vehicles ? vehicleNav(NAV_ITEMS) : NAV_ITEMS), [vehicles]);
+  const vehicles = useFeature('finance.vehicles');
+  const rent = useFeature('finance.rent');
+  const emi = useFeature('finance.emi');
+  const featuresLoaded = useFeaturesLoaded();
+  const navItems = useMemo(() => featureNav(NAV_ITEMS, { vehicles, rent, emi }), [vehicles, rent, emi]);
   const tabs = (
     <Tabs
       backBehavior="history"
@@ -150,7 +160,13 @@ export default function StoreLayout() {
 
   return (
     <RoleGuard allow={['store']}>
-      {isWideWeb ? (
+      {/* The side panel is built from the organization's features: hold the page until they are in, so it never shows a
+          panel without Rent & EMI for a moment and then grows one. */}
+      {!featuresLoaded ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }}>
+          <ActivityIndicator />
+        </View>
+      ) : isWideWeb ? (
         <WebSidebarShell items={navItems} roleLabel="Company" profileHref="/(store)/profile">
           {tabs}
         </WebSidebarShell>

@@ -4,7 +4,7 @@ import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../hooks/useAuth';
 import { AppLogo } from '../AppLogo';
-import { sellsVehicles } from '../../utils/accountFeatures';
+import { isDeevaBrand } from '../../utils/accountFeatures';
 
 export interface WebNavItem {
   href: string;
@@ -183,7 +183,7 @@ export function WebSidebarShell({
         >
           <AppLogo size={28} />
           <Text style={{ fontSize: 15, fontWeight: '800', color: '#111827' }}>
-            {sellsVehicles(profile?.business_name?.trim() || profile?.full_name) ? 'DEEVA' : 'Finance Nepal'}
+            {isDeevaBrand(profile?.business_name?.trim() || profile?.full_name) ? 'DEEVA' : 'Finance Nepal'}
           </Text>
         </Pressable>
 

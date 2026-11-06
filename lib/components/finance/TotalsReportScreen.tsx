@@ -26,7 +26,8 @@ import { BalanceFigure, EditableDetails } from './CustomerDetailScreen';
 import { TransactionDetailModal } from './TransactionsScreen';
 import { tidyName } from '../../utils/nameCaps';
 import { highlightText } from './Highlight';
-import { itemNamesOf, modelNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemNamesOf, modelNamesOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { partyFigures } from '../../utils/partyFigures';
 import { LedgerFormatTable, type LedgerFormatRow } from './LedgerFormatTable';
 import type { BusinessTransaction } from '../../../types/database.types';
@@ -77,7 +78,7 @@ interface Entry {
   payment?: boolean;
   /** The bill's own number, for a Sales / Purchase bill. */
   billNo?: string;
-  /** What the bill is for - its items - where the report names it beside the vendor (see sellsVehicles). */
+  /** What the bill is for - its items - where the report names it beside the vendor (the finance.vehicles feature). */
   itemNames?: string;
   /** The model numbers entered on the bill's items, where the report shows them (a vehicle account's Purchase Report). */
   modelNames?: string;
@@ -143,7 +144,7 @@ export function TotalsReportScreen({ kind, basePath, partyId }: { kind: Kind; ba
   const userId = useAuthStore((state) => state.ownerId ?? undefined);
   const profile = useAuthStore((state) => state.profile);
   // The Purchase Report of an account that buys vehicles says which one, beside the vendor.
-  const vehicleAccount = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const vehicleAccount = useFeature('finance.vehicles');
   // Every report but Expenses names the vehicle: a bill's item, a payment's remark (it starts with the vehicle).
   const showItem = kind !== 'expense' && vehicleAccount;
   const vehicleOfNote = (note: string | null | undefined) => (note ?? '').split(' · ')[0].trim();

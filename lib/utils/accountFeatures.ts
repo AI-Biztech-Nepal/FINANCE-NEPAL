@@ -1,18 +1,12 @@
 // lib/utils/accountFeatures.ts
 import type { BillItem } from '../../types/database.types';
 
-/** Deeva Auto Enterprises sells vehicles, so its Purchase Report and its Paid page name the vehicle (the
- * bill's item) beside the vendor. There is no per-account setting, so the account is picked out by the
- * business name saved on its profile - written "Deeva" or "Deva", in any case. */
-export function sellsVehicles(businessName: string | null | undefined): boolean {
-  return orgSellsVehicles || /\bdee?va\s+auto\b/i.test(businessName ?? '');
-}
-
-/** The organization's `finance.org_settings.sells_vehicles` flag, set once at sign-in (see useAuth.ts) before any screen
- * renders. The name match above stays as a fallback for accounts that predate the flag. */
-let orgSellsVehicles = false;
-export function setOrgSellsVehicles(value: boolean): void {
-  orgSellsVehicles = value;
+/** Deeva Auto Enterprises, picked out by the business name saved on its profile - written "Deeva" or "Deva", in any
+ * case. This is branding only (the green band, the logo, the DEEVA title). Which screens an account has - vehicle
+ * columns, Rent, EMI - is the organization's features, not its name: see lib/features. The one place a name still
+ * decides a feature is the fallback in useFeatures.ts, for the days before the portal can be asked. */
+export function isDeevaBrand(businessName: string | null | undefined): boolean {
+  return /\bdee?va\s+auto\b/i.test(businessName ?? '');
 }
 
 export interface BannerColors {
@@ -33,7 +27,7 @@ const GREEN_BANNER: BannerColors = { solid: '#169441', gradient: ['#169441', '#1
 /** The colours of the big band at the top of the Dashboard, Finance and Report pages: the app's blue, except for Deeva
  * Auto Enterprises, whose main colour is green. Only that band - the rest of the app stays blue for every account. */
 export function bannerColors(businessName: string | null | undefined): BannerColors {
-  return sellsVehicles(businessName) ? GREEN_BANNER : BLUE_BANNER;
+  return isDeevaBrand(businessName) ? GREEN_BANNER : BLUE_BANNER;
 }
 
 /** A logo kept with the app for an account that has not uploaded one of its own (Company Details): Hamro G&G
@@ -41,18 +35,18 @@ export function bannerColors(businessName: string | null | undefined): BannerCol
  * Enterprises. Both are made for a light background (no background of their own). */
 export function builtInLogo(businessName: string | null | undefined): number | null {
   if (/\bg\s*(&|n|and)\s*g\b/i.test(businessName ?? '')) return require('../../assets/logos/gng.png');
-  return sellsVehicles(businessName) ? require('../../assets/logos/deeva.png') : null;
+  return isDeevaBrand(businessName) ? require('../../assets/logos/deeva.png') : null;
 }
 
 /** The same built-in logo at full size, for showing it large (the small one is made for the little icon square). */
 export function builtInLogoLarge(businessName: string | null | undefined): number | null {
-  return sellsVehicles(businessName) ? require('../../assets/logos/deeva-large.png') : builtInLogo(businessName);
+  return isDeevaBrand(businessName) ? require('../../assets/logos/deeva-large.png') : builtInLogo(businessName);
 }
 
 /** The logo straight on the Dashboard's top band, no box: Deeva's - the same design in silver-white lines with the red
  * swoosh under the car kept, no background. */
 export function builtInLogoBanner(businessName: string | null | undefined): number | null {
-  return sellsVehicles(businessName) ? require('../../assets/logos/deeva-banner.png') : null;
+  return isDeevaBrand(businessName) ? require('../../assets/logos/deeva-banner.png') : null;
 }
 
 /** The names of a bill's items, each once, in the order they are on the bill. */

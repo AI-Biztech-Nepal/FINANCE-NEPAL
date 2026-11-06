@@ -17,7 +17,8 @@ import { useBankAccounts } from '../../hooks/useBankAccounts';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
 import { useFreshLedgerArea } from '../../hooks/useFreshLedgerArea';
 import { journalOf } from '../../utils/journalVoucher';
-import { itemListOf, itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemListOf, itemNamesOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { formatMoney, round2 } from '../../utils/money';
 import { BankAccountPickerModal } from './BankAccountPickerModal';
 import { EntryWhenFields, PartyMoveField, PaymentMethodButton, stampOf, timeOf, useEntryParty, useEntryWhen } from './EntryEditParts';
@@ -781,7 +782,8 @@ function CustomerDetail({ id, basePath }: { id: string; basePath: string }) {
 
   const { data: partyRow } = useSupabaseRow('customers', id);
   const profile = useAuthStore((state) => state.profile);
-  const showItems = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const showItems = useFeature('finance.vehicles');
+  const rentOn = useFeature('finance.rent');
   const { nameById: partyTypeName } = usePartyTypes(partyRow?.owner_id);
 
   // ---- The statement: both ledgers as one account (see ledgerStatement.ts) ----
@@ -1054,7 +1056,9 @@ function CustomerDetail({ id, basePath }: { id: string; basePath: string }) {
   const deleteBill = useSupabaseDelete('business_transactions');
   const lockedReason = (row: HistoryRow) =>
     (row.vendor ?? row.ledger)?.source_type === 'rental_wage'
-      ? 'This daily rent comes from a rental. Change the rental (who it is rented to, its rate or Returned on) or remove it on the Rent & EMI page, and these lines follow.'
+      ? rentOn
+        ? 'This daily rent comes from a rental. Change the rental (who it is rented to, its rate or Returned on) or remove it on the Rent & EMI page, and these lines follow.'
+        : 'This daily rent comes from a rental. Rent is not switched on for your organization, so the rental cannot be changed here; an owner or admin can switch it on in the portal.'
       : 'This entry was written by another record (a job or a booking). Change that record and this follows.';
   function editAnyRow(row: HistoryRow) {
     if (row.tx) router.push(`${basePath}/transactions?type=${row.tx.type}&add=1&edit=${row.tx.id}` as never);

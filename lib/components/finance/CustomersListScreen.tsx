@@ -46,7 +46,8 @@ import { isValidPhone10 } from '../../utils/phone';
 import { localTodayIso } from '../../utils/localDate';
 import { journalOf } from '../../utils/journalVoucher';
 import { highlightText as highlight } from './Highlight';
-import { itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemNamesOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { ALL_TIME, PeriodPicker, type Period } from './PeriodPicker';
 import { toBsHistoryLabel } from '../../utils/nepaliDate';
 import { useCalendarMode } from '../../hooks/useCalendarMode';
@@ -95,8 +96,7 @@ function useLedgerItems(userId: string | undefined): {
     all: true,
     enabled: !!userId,
   });
-  const profile = useAuthStore((state) => state.profile);
-  const showItems = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const showItems = useFeature('finance.vehicles');
 
   return useMemo(() => {
     const byParty = new Map<string, LedgerItem[]>();
@@ -1066,7 +1066,7 @@ function LedgerList({ basePath }: { basePath: string }) {
 
   // A vehicle account reads Balance as the original price: everything billed with the party, before any
   // payment - what is still to be received or paid after that is the Receivable and Payable.
-  const vehicles = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const vehicles = useFeature('finance.vehicles');
   const priceOf = (d: PartyRowData) => round2(d.sales + d.purchases);
   const totalPrice = useMemo(() => round2(analysed.reduce((sum, d) => sum + round2(d.sales + d.purchases), 0)), [analysed]);
 

@@ -5,7 +5,7 @@ import { KeyboardAwareSectionList } from 'react-native-keyboard-aware-scroll-vie
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useRole } from '../../hooks/useAuth';
-import { sellsVehicles } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
 import { useConfirmNewParty, withType } from './NewPartyConfirm';
 import { highlightText } from './Highlight';
@@ -797,8 +797,8 @@ function TransactionForm({
   // phone browser) gets the same touch form the native app does.
   const desktopWeb = useIsWideWeb();
   // A vehicle account's Purchase bill has a Model No. beside each item.
-  const profile = useAuthStore((state) => state.profile);
-  const withModel = type === 'purchase' && sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const sellsVehicles = useFeature('finance.vehicles');
+  const withModel = type === 'purchase' && sellsVehicles;
   const createTx = useSupabaseInsert('business_transactions');
   const { confirm: confirmSave, dialog: confirmDialog } = useConfirmSave();
   // A new customer / vendor made from a typed name is checked first, with its name editable.

@@ -17,6 +17,7 @@ import { useCalendarMode } from '../../hooks/useCalendarMode';
 import { isSettledOnTheSpot } from '../../hooks/useAccountBalances';
 import { journalOf } from '../../utils/journalVoucher';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
+import { useFeature } from '../../features/useFeatures';
 
 type Period = 'year' | 'all';
 
@@ -94,6 +95,7 @@ const PERIOD_LABEL: Record<Period, string> = { year: 'This Year', all: 'All Time
  * introducing a second source of truth. */
 export function ReportScreen({ basePath }: { basePath: string }) {
   const userId = useAuthStore((state) => state.ownerId ?? undefined);
+  const rentOn = useFeature('finance.rent');
   // Every bill (not the API's first 1000): the stock at a period's start is worked out from all of them.
   const { data: transactions } = useSupabaseQuery('business_transactions', {
     filters: userId ? { owner_id: userId } : {},
@@ -489,8 +491,9 @@ export function ReportScreen({ basePath }: { basePath: string }) {
               <Group id="dincome" open={openGroups} onToggle={toggleGroup} label="Direct incomes" amount={pl.services}
                 rows={[['Services sold (installation, repair, labour)', pl.services]]} onOpen={() => go('/sales-report')} />
             )}
-            {/* Rent earned from the vehicles given out in the period - a direct income. Opens Rent & EMI. */}
-            {pl.rentIncome > 0 && <Line label="Direct incomes · Rent" amount={pl.rentIncome} onPress={() => go('/rent?tab=rent')} />}
+            {/* Rent earned from the vehicles given out in the period - a direct income. It stays in the books whether or not Rent is
+                switched on; it opens the Rent page only while it is. */}
+            {pl.rentIncome > 0 && <Line label="Direct incomes · Rent" amount={pl.rentIncome} onPress={rentOn ? () => go('/rent?tab=rent') : undefined} />}
             {/* What is left on the shelf: the stock list, in-stock items only. */}
             <Line label="Closing stock" amount={pl.closing} onPress={() => go('/inventory?filter=in')} />
             {grossProfit < 0 ? <Line label="Gross loss c/o" amount={-grossProfit} tone="loss" bold /> : null}

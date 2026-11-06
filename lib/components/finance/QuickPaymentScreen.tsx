@@ -32,7 +32,8 @@ import { useCalendarMode } from '../../hooks/useCalendarMode';
 import type { Customer } from '../../../types/database.types';
 import { localTodayIso } from '../../utils/localDate';
 import { round2, formatMoney } from '../../utils/money';
-import { itemListOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemListOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import type { SuggestOption } from './SuggestInput';
 
 // Local date, not UTC - see localTodayIso.
@@ -92,8 +93,7 @@ function QuickPaymentForm() {
   });
   // A vehicle account's Paid and Received tables also name the car each payment is for (its number): on Paid,
   // the cars bought from that vendor; on Received, the cars sold to that customer.
-  const profile = useAuthStore((state) => state.profile);
-  const withCar = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const withCar = useFeature('finance.vehicles');
   const { data: purchaseBills } = useSupabaseQuery('business_transactions', {
     filters: userId ? { owner_id: userId, type: 'purchase' } : {},
     orderBy: { column: 'created_at', ascending: false },

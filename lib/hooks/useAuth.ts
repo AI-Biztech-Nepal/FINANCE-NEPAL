@@ -6,7 +6,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase, AUTH_STORAGE_KEY } from '../supabase';
 import { SecureAuthStorage } from '../utils/secureAuthStorage';
 import { queryClient } from '../providers/QueryProvider';
-import { setOrgSellsVehicles } from '../utils/accountFeatures';
+import { useFeatureStore } from '../features/useFeatures';
 import type { Profile, UserRole } from '../../types/database.types';
 
 /** True when this page was opened from the link in a password-reset email.
@@ -74,7 +74,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     await SecureAuthStorage.removeItem(AUTH_STORAGE_KEY);
     queryClient.clear();
-    setOrgSellsVehicles(false);
+    useFeatureStore.getState().reset();
     set({ session: null, profile: null, ownerId: null, isRecovering: false });
   },
 }));
@@ -92,17 +92,17 @@ export function useAuthListener() {
     async function loadProfile(userId: string) {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (!error && isMounted) setProfile(data as Profile);
-      await loadOrg(userId);
+      await loadOrg(userId, (data as Profile | null)?.business_name?.trim() || (data as Profile | null)?.full_name);
     }
 
     // Rows belong to the active organization of the platform database (core), not to the user. The Database type
-    // only describes this app's own schema, so these two calls are untyped.
-    async function loadOrg(userId: string) {
+    // only describes this app's own schema, so this call is untyped. The organization's features are read here, once
+    // per session, before the org is published: nothing renders against the org until its features are in.
+    async function loadOrg(userId: string, accountName: string | null | undefined) {
       const db = supabase as any;
       const { data: ctx } = await db.schema('core').rpc('my_context');
       const orgId: string = ctx?.active_org_id ?? userId; // one-person accounts: the org shares the owner's id
-      const { data: settings } = await db.from('org_settings').select('sells_vehicles').eq('org_id', orgId).maybeSingle();
-      setOrgSellsVehicles(!!settings?.sells_vehicles);
+      await useFeatureStore.getState().load(orgId, accountName);
       if (isMounted) setOwnerId(orgId);
     }
 

@@ -18,7 +18,8 @@ import { entryDay } from '../../utils/ledgerStatement';
 import { reportHtml, type PrintReport, type PrintSection } from '../../utils/printReport';
 import { MONEY } from './moneyColors';
 import { journalOf } from '../../utils/journalVoucher';
-import { itemListOf, itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { itemListOf, itemNamesOf } from '../../utils/accountFeatures';
+import { useFeature } from '../../features/useFeatures';
 import { round2 } from '../../utils/money';
 import { highlightText } from './Highlight';
 import { PopupCard } from './FormKit';
@@ -130,7 +131,7 @@ export function PartyBalancesScreen({ basePath, direction }: { basePath: string;
   });
   // `all`: balances are sums over every entry; a plain read stops at 1000 rows. A vehicle account reads both ledgers
   // either way: its table is the Ledger's own, which nets a person's two ledgers.
-  const vehicleBooks = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const vehicleBooks = useFeature('finance.vehicles');
   const { data: customerEntries } = useSupabaseQuery('customer_ledger_entries', {
     filters: userId ? { owner_id: userId } : {},
     all: true,
@@ -142,7 +143,7 @@ export function PartyBalancesScreen({ basePath, direction }: { basePath: string;
     enabled: !!userId && (direction === 'give' || vehicleBooks),
   });
   // A vehicle account's entries that a bill posted read with the item (car) on the bill in place of its remark.
-  const showItems = sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
+  const showItems = useFeature('finance.vehicles');
   const { data: itemBills } = useSupabaseQuery('business_transactions', {
     filters: userId ? { owner_id: userId } : {},
     columns: 'id,items',
