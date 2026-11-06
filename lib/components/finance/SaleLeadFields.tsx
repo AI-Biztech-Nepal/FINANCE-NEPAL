@@ -30,7 +30,12 @@ export function SaleLeadFields({
   referralField: ReactNode;
 }) {
   return (
-    <View className={framed ? 'rounded-lg border border-gray-200 bg-white px-3 py-3' : 'border-t border-gray-200 bg-white px-5 py-4'}>
+    // zIndex: react-native-web gives every View its own stacking layer, so the Referred by list (which opens downward over
+    // what follows) is only in front of the Remarks and totals below if this whole block sits above them.
+    <View
+      className={framed ? 'rounded-lg border border-gray-200 bg-white px-3 py-3' : 'border-t border-gray-200 bg-white px-5 py-4'}
+      style={{ zIndex: 30 }}
+    >
       <View className="mb-2.5 flex-row items-center" style={{ gap: 8 }}>
         <Ionicons name="megaphone-outline" size={16} color={accent} />
         <Text className="text-[13px] font-bold text-gray-900">Lead</Text>

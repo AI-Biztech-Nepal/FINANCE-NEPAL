@@ -2598,7 +2598,7 @@ function TransactionForm({
               </View>
             )}
             {shop && type === 'sale' && (
-              <View className="mt-3">
+              <View className="mt-3" style={{ zIndex: 30 }}>
                 <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed referralField={referralField('#EA580C')} />
               </View>
             )}
