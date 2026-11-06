@@ -1,6 +1,6 @@
 // lib/components/finance/CrmScreen.tsx
 //
-// CRM (Marketing), laid out like Auto Stock Manager's: four stat cards, "Today's Follow-ups", a search bar with Lead Source
+// CRM (Marketing), laid out like Auto Stock Manager's: four stat cards, a search bar with Lead Source
 // and Lead Status dropdowns, quick source buttons with counts and sales, and one table of customers - each with a source
 // dropdown, a status dropdown, last contact, next follow-up and what they have bought. Leads is a different page: only a
 // name and how they came.
@@ -16,7 +16,7 @@ import { useAuthStore } from '../../hooks/useAuth';
 import { useSupabaseDelete, useSupabaseInsert, useSupabaseQuery, useSupabaseUpdate } from '../../hooks/useSupabase';
 import { BookPage, BookTable, ToolbarButton, ToolbarSearch, money, useBookLayout, type BookColumn } from './BookKit';
 import { SelectDropdown } from './SelectDropdown';
-import { HISTORY_KINDS, LEAD_SOURCES, LEAD_STATUSES, dayLabel, inDays, sourceNeedsNote, waNumber } from './leadKit';
+import { HISTORY_KINDS, LEAD_SOURCES, LEAD_STATUSES, dayLabel, sourceNeedsNote, waNumber } from './leadKit';
 import { CustomerProfile } from './CustomerProfile';
 import { norm, type CrmForm, type CrmRow } from './crmKit';
 import { adStringToBs, bsDaysInMonth, bsToAdString, toBsHistoryLabel } from '../../utils/nepaliDate';
@@ -215,18 +215,6 @@ export function CrmScreen() {
       convertedPct: rows.length ? Math.round((converted / rows.length) * 100) : 0,
     };
   }, [rows, today]);
-
-  // ---- today's follow-ups: overdue, today, and the coming week --------------------------------------------------
-  const followUps = useMemo(() => {
-    const week = inDays(7);
-    const due = rows.filter((r) => !!r.lead && isOpen(r.status) && !!r.followUp && r.followUp <= week).sort((a, b) => (a.followUp ?? '').localeCompare(b.followUp ?? ''));
-    return {
-      overdue: due.filter((r) => (r.followUp ?? '') < today),
-      today: due.filter((r) => r.followUp === today),
-      upcoming: due.filter((r) => (r.followUp ?? '') > today),
-    };
-  }, [rows, today]);
-  const followUpTotal = followUps.overdue.length + followUps.today.length + followUps.upcoming.length;
 
   // ---- the list -------------------------------------------------------------------------------------------------
   const q = search.trim().toLowerCase();
@@ -500,11 +488,6 @@ export function CrmScreen() {
     { key: 'actions', label: '', width: 118, render: actionsCell },
   ];
 
-  const sectionMeta = [
-    { key: 'overdue' as const, label: 'Overdue', color: '#B91C1C', bg: '#FEF2F2' },
-    { key: 'today' as const, label: 'Today', color: '#1D4ED8', bg: '#EFF6FF' },
-    { key: 'upcoming' as const, label: 'Upcoming', color: '#475569', bg: '#F1F5F9' },
-  ];
   const sourceLabel = sourceFilter === 'all' ? 'Lead Source' : sourceFilter === 'needs' ? 'Not tagged' : SOURCE[sourceFilter].label;
   const statusLabel = statusFilter === 'all' ? 'Lead Status' : STATUS[statusFilter].label;
 
@@ -563,52 +546,6 @@ export function CrmScreen() {
           </Card>
         ))}
       </View>
-
-      {/* Today's follow-ups */}
-      <Card>
-        <View className="flex-row flex-wrap items-center justify-between px-4 pb-2 pt-4" style={{ gap: 8 }}>
-          <View className="flex-row items-center" style={{ gap: 8 }}>
-            <View className="items-center justify-center rounded-lg bg-blue-50" style={{ width: 32, height: 32 }}>
-              <Ionicons name="calendar" size={17} color={BLUE} />
-            </View>
-            <Text className="text-base font-bold text-gray-900">Today's Follow-ups</Text>
-          </View>
-          <View className="flex-row flex-wrap" style={{ gap: 6 }}>
-            {sectionMeta.map((s) => followUps[s.key].length > 0 && (
-              <View key={s.key} className="rounded-full px-2 py-1" style={{ backgroundColor: s.bg }}>
-                <Text className="text-[11px] font-bold" style={{ color: s.color }}>{s.label} {followUps[s.key].length}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        {followUpTotal === 0 ? (
-          <Text className="px-4 pb-4 text-sm text-gray-500">Nothing scheduled for today or the coming week.</Text>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingBottom: 16, paddingTop: 4 }}>
-            {sectionMeta.flatMap((s) =>
-              followUps[s.key].map((r) => (
-                <View key={r.key} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5" style={{ width: 252, borderLeftWidth: 4, borderLeftColor: s.color }}>
-                  <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
-                    <Text className="text-[11px] font-semibold text-gray-500">{r.followUp === today ? 'Today' : toBsHistoryLabel(r.followUp ?? today)}</Text>
-                    <View className="rounded-full px-1.5 py-0.5" style={{ backgroundColor: s.bg }}>
-                      <Text className="text-[10px] font-bold" style={{ color: s.color }}>{s.label}</Text>
-                    </View>
-                  </View>
-                  <Pressable onPress={() => openProfile(r)}>
-                    <Text className="mt-1 text-sm font-bold text-gray-900" numberOfLines={1}>{r.name}</Text>
-                  </Pressable>
-                  <Text className="text-xs text-gray-500" numberOfLines={1}>{r.lead?.interested_in || 'Follow up'}</Text>
-                  <View className="mt-2 flex-row" style={{ gap: 6 }}>
-                    <IconButton icon="checkmark" color="#047857" bg="#ECFDF5" label={`Mark follow-up with ${r.name} done`} onPress={() => markDone(r)} />
-                    <IconButton icon="calendar-outline" color="#4B5563" bg="#F3F4F6" label={`Reschedule ${r.name}`} onPress={() => openProfile(r)} />
-                    <IconButton icon="eye-outline" color="#4B5563" bg="#F3F4F6" label={`View ${r.name}`} onPress={() => openProfile(r)} />
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
-        )}
-      </Card>
 
       {/* Search, Lead Source and Lead Status */}
       <View className="flex-row flex-wrap items-center" style={{ gap: 8 }}>
