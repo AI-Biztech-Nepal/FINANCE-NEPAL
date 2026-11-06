@@ -14,6 +14,16 @@ import type { Lead, LeadSource } from '../../../types/database.types';
 
 const SOURCE = Object.fromEntries(LEAD_SOURCES.map((s) => [s.key, s])) as Record<LeadSource, (typeof LEAD_SOURCES)[number]>;
 
+type IconName = keyof typeof Ionicons.glyphMap;
+type Tab = 'all' | LeadSource;
+const TAB_BLUE = '#2563EB';
+
+/** The outline of an icon when it has one (a tab that is not chosen), else the icon itself (the brand logos have none). */
+const outlined = (icon: IconName, filled: boolean): IconName => {
+  const outline = `${icon}-outline` as IconName;
+  return !filled && outline in Ionicons.glyphMap ? outline : icon;
+};
+
 /** How they found the shop: "TikTok", or "Referral · Ram Sharma" with who referred them. */
 const howOf = (l: Lead) => (l.source_note ? `${SOURCE[l.source].label} · ${l.source_note}` : SOURCE[l.source].label);
 
@@ -27,10 +37,17 @@ export function LeadsScreen() {
   });
   const deleteLead = useSupabaseDelete('leads');
   const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<Tab>('all');
 
   const leads: Lead[] = useMemo(() => [...((data ?? []) as Lead[])].sort((a, b) => b.created_at.localeCompare(a.created_at)), [data]);
   const q = search.trim().toLowerCase();
-  const shown = leads.filter((l) => !q || l.name.toLowerCase().includes(q) || howOf(l).toLowerCase().includes(q));
+  const shown = leads.filter(
+    (l) => (tab === 'all' || l.source === tab) && (!q || l.name.toLowerCase().includes(q) || howOf(l).toLowerCase().includes(q))
+  );
+  const tabs: { key: Tab; label: string; icon?: IconName; count: number }[] = [
+    { key: 'all', label: 'All', count: leads.length },
+    ...LEAD_SOURCES.map((s) => ({ key: s.key as Tab, label: s.label, icon: s.icon, count: leads.filter((l) => l.source === s.key).length })),
+  ];
 
   function confirmDelete(l: Lead) {
     showAlert('Delete this lead?', `${l.name} will be removed from Leads. Their sales are not affected.`, [
@@ -61,6 +78,35 @@ export function LeadsScreen() {
     <BookPage wide={layout.wide}>
       <View className="flex-row" style={{ maxWidth: 380 }}>
         <ToolbarSearch value={search} onChange={setSearch} placeholder="Search customer or how they came" wide={false} />
+      </View>
+
+      <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+        {tabs.map((t) => {
+          const on = t.key === tab;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => setTab(t.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              className="flex-row items-center rounded-full px-4"
+              style={{ height: 40, gap: 7, backgroundColor: on ? TAB_BLUE : '#FFFFFF', borderWidth: 1, borderColor: on ? TAB_BLUE : '#E5E7EB' }}
+            >
+              {!!t.icon && <Ionicons name={outlined(t.icon, on)} size={15} color={on ? '#FFFFFF' : '#374151'} />}
+              <Text className="text-sm font-semibold" style={{ color: on ? '#FFFFFF' : '#374151' }}>
+                {t.label}
+              </Text>
+              <View
+                className="items-center justify-center rounded-full px-1.5"
+                style={{ minWidth: 22, height: 20, backgroundColor: on ? 'rgba(255,255,255,0.28)' : '#F1F5F9' }}
+              >
+                <Text className="text-[11px] font-bold" style={{ color: on ? '#FFFFFF' : '#475569' }}>
+                  {t.count}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
 
       {shown.length === 0 ? (
