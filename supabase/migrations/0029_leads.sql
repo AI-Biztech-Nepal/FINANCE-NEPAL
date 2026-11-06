@@ -23,6 +23,10 @@ create table if not exists public.leads (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+-- `create table if not exists` leaves a table that is already there as it is, so a database that ran the first version of
+-- this file (before customer_id was added) gets the column here.
+alter table public.leads
+  add column if not exists customer_id uuid references public.customers(id) on delete set null;
 create index if not exists leads_owner_status_idx on public.leads (owner_id, status);
 
 alter table public.leads enable row level security;
@@ -39,3 +43,6 @@ create trigger leads_stamp_owner before insert on public.leads
   for each row execute function public.finance_stamp_owner();
 
 commit;
+
+-- Makes the API see the new column straight away instead of after its cache refreshes.
+notify pgrst, 'reload schema';
