@@ -28,7 +28,15 @@ const outlined = (icon: IconName, filled: boolean): IconName => {
 };
 
 /** How they found the shop: "TikTok", or "Referral · Ram Sharma" with who referred them. */
-const howOf = (l: Lead) => (l.source_note ? `${SOURCE[l.source].label} · ${l.source_note}` : SOURCE[l.source].label);
+const how = (source: LeadSource, note: string | null | undefined) => (note ? `${SOURCE[source].label} · ${note}` : SOURCE[source].label);
+const howOf = (l: Lead) => how(l.source, l.source_note);
+
+/** The lead a purchase had when it was sold: its own, if its history line kept one (sales saved since then do), else the
+ * lead the person has on file now. */
+function leadOfPurchase(l: Lead, tx: BusinessTransaction): { source: LeadSource; text: string } {
+  const own = (l.history ?? []).find((h) => h.sale_id === tx.id && h.source && SOURCE[h.source]);
+  return own?.source ? { source: own.source, text: how(own.source, own.source_note) } : { source: l.source, text: howOf(l) };
+}
 
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
 
@@ -163,14 +171,26 @@ export function LeadsScreen() {
                       <Text className="text-[11px] font-semibold text-gray-400">
                         {bought.length} {bought.length === 1 ? 'purchase' : 'purchases'}
                       </Text>
-                      {bought.map((tx) => (
-                        <View key={tx.id} className="flex-row items-center justify-between" style={{ gap: 10 }}>
-                          <Text className="text-xs text-gray-600" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
-                            {itemNamesOf(tx.items) || 'Sale'} · {toBsHistoryLabel(tx.bill_date ?? tx.created_at)}
-                          </Text>
-                          <Text className="text-xs font-semibold text-gray-700">NPR {money(tx.amount)}</Text>
-                        </View>
-                      ))}
+                      {bought.map((tx) => {
+                        const lead = leadOfPurchase(l, tx);
+                        const meta = SOURCE[lead.source];
+                        return (
+                          <View key={tx.id} className="flex-row items-center justify-between" style={{ gap: 10 }}>
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text className="text-xs text-gray-600" numberOfLines={1}>
+                                {itemNamesOf(tx.items) || 'Sale'} · {toBsHistoryLabel(tx.bill_date ?? tx.created_at)}
+                              </Text>
+                              <View className="flex-row items-center" style={{ gap: 4 }}>
+                                <Ionicons name={meta.icon} size={11} color={meta.color} />
+                                <Text className="text-[11px] font-semibold" style={{ color: meta.color, flexShrink: 1 }} numberOfLines={1}>
+                                  {lead.text}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text className="text-xs font-semibold text-gray-700">NPR {money(tx.amount)}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
                 </View>

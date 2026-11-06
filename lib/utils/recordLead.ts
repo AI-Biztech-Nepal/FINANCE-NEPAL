@@ -22,7 +22,10 @@ export async function recordLeadFromSale(sale: {
   items: string;
   amount: number;
   billNo: string | null;
-  /** A new bill adds a line to the lead's history; changing the lead on an edited bill does not add it twice. */
+  /** The saved bill, so its history line can say which lead that sale had. */
+  saleId?: string | null;
+  /** A new bill adds a line to the lead's history; changing the lead on an edited bill does not add it twice
+   * (it changes the lead on that bill's line instead). */
   addHistory: boolean;
 }): Promise<void> {
   const { data, error } = await supabase.from('leads').select('*').eq('owner_id', sale.ownerId);
@@ -39,12 +42,19 @@ export async function recordLeadFromSale(sale: {
     kind: 'sale',
     note: `Bought ${sale.items || 'items'} - NPR ${sale.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}${sale.billNo ? ` (bill ${sale.billNo})` : ''}`,
     at: new Date().toISOString(),
+    ...(sale.saleId ? { sale_id: sale.saleId, source: sale.source, source_note: sale.sourceNote } : null),
   };
 
   // The same loose typing the app's own hooks use (see useSupabase.ts): the hand-written Database type is minimal.
   const table = supabase.from('leads') as any;
 
   if (existing) {
+    const history = existing.history ?? [];
+    const nextHistory = sale.addHistory
+      ? [...history, entry]
+      : sale.saleId
+        ? history.map((h) => (h.sale_id === sale.saleId ? { ...h, source: sale.source, source_note: sale.sourceNote } : h))
+        : history;
     const { error: updateError } = await table
       .update({
         status: 'converted',
@@ -54,7 +64,7 @@ export async function recordLeadFromSale(sale: {
         phone: existing.phone ?? sale.phone,
         interested_in: existing.interested_in ?? (sale.items || null),
         follow_up_on: null,
-        history: sale.addHistory ? [...(existing.history ?? []), entry] : existing.history ?? [],
+        history: nextHistory,
       })
       .eq('id', existing.id);
     if (updateError) throw updateError;

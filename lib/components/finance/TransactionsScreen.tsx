@@ -1318,10 +1318,11 @@ function TransactionForm({
           payment_mode: initial?.payment_mode ?? ('cash' as const),
           bank_account_id: initial?.bank_account_id ?? null,
         };
+        let savedSaleId: string | null = initial?.id ?? null;
         if (initial) {
           await updateTx.mutateAsync({ id: initial.id, values });
         } else {
-          await createTx.mutateAsync({ owner_id: userId, ...values });
+          savedSaleId = (await createTx.mutateAsync({ owner_id: userId, ...values })).id;
           // The bill was recorded for units already on the shelf, and saving it counted them again: put the
           // item's stock back to what it was. A failure here doesn't undo the bill.
           if (itemPrefill?.keepStock != null) {
@@ -1350,6 +1351,7 @@ function TransactionForm({
               items: itemNamesOf(values.items),
               amount: grandTotal,
               billNo: billNo.trim() || null,
+              saleId: savedSaleId,
               addHistory: !initial,
             });
             queryClient.invalidateQueries({ queryKey: ['leads'] });

@@ -61,6 +61,11 @@ export interface LeadHistoryEntry {
   kind: 'call' | 'whatsapp' | 'visit' | 'note' | 'sale';
   note: string;
   at: string;
+  /** A 'sale' entry: the bill it is for, and how the customer found the shop when that bill was saved. A person's lead
+   * can change from one sale to the next, so each sale keeps its own. Entries from before this have none of the three. */
+  sale_id?: string;
+  source?: LeadSource;
+  source_note?: string | null;
 }
 
 /** A person being followed up (0029). Shown on the All In One Abroad account's Leads page. */
