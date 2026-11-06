@@ -1,4 +1,5 @@
 // lib/components/web/WebSidebarShell.tsx
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,10 @@ export interface WebNavItem {
   children?: WebNavItem[];
   // A title over its children, not a page of its own: it opens its first child and only the child lights up.
   heading?: boolean;
+  // A dropdown: pressing the title opens or closes its children instead of going anywhere. It starts closed, and opens
+  // itself when the page showing is one of its children. Only the groups that ask for it behave this way - the rest of
+  // the panel always shows every child.
+  collapsible?: boolean;
 }
 
 /** One row of the nav list, indented by how deep it sits (0 = Home/Finance,
@@ -40,6 +45,14 @@ function NavRow({
   const active = !item.heading && isActive(item.href);
   const top = depth === 0;
 
+  // A dropdown group: closed until opened, and open while one of its pages is the page showing.
+  const hasActiveChild = !!item.children?.some((child) => isActive(child.href));
+  const [open, setOpen] = useState(hasActiveChild);
+  useEffect(() => {
+    if (hasActiveChild) setOpen(true);
+  }, [hasActiveChild]);
+  const showChildren = !item.collapsible || open;
+
   const color = active ? '#2563EB' : top ? '#6B7280' : '#9CA3AF';
   return (
     <View>
@@ -53,12 +66,16 @@ function NavRow({
       >
         <Pressable
           onPress={() => {
+            if (item.collapsible) {
+              setOpen((was) => !was);
+              return;
+            }
             router.push((item.heading ? item.children?.[0]?.href ?? item.href : item.href) as any);
             onNavigate?.();
           }}
-          accessibilityRole="link"
+          accessibilityRole={item.collapsible ? 'button' : 'link'}
           accessibilityLabel={item.label}
-          accessibilityState={{ selected: active }}
+          accessibilityState={item.collapsible ? { expanded: open } : { selected: active }}
           aria-current={active ? 'page' : undefined}
           style={{
             flex: 1,
@@ -81,10 +98,11 @@ function NavRow({
           >
             {item.label}
           </Text>
+          {item.collapsible && <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={hasActiveChild ? '#2563EB' : '#9CA3AF'} />}
         </Pressable>
       </View>
 
-      {!!item.children?.length && (
+      {!!item.children?.length && showChildren && (
         <View style={{ marginTop: 2, marginBottom: 4, gap: 1 }}>
           {item.children.map((child) => (
             <NavRow key={child.href} item={child} depth={depth + 1} isActive={isActive} onNavigate={onNavigate} />

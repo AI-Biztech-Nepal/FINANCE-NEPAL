@@ -102,6 +102,7 @@ const MARKETING_NAV: WebNavItem = {
   label: 'Marketing',
   icon: 'megaphone',
   heading: true,
+  collapsible: true,
   children: [
     { href: '/(store)/leads', label: 'Leads', icon: 'people' },
     { href: '/(store)/crm', label: 'CRM', icon: 'heart' },
