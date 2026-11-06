@@ -58,7 +58,7 @@ export type LeadStatus = 'new' | 'contacted' | 'interested' | 'converted' | 'los
 
 /** One contact with a lead, kept in the lead's `history` (oldest first). */
 export interface LeadHistoryEntry {
-  kind: 'call' | 'whatsapp' | 'visit' | 'note';
+  kind: 'call' | 'whatsapp' | 'visit' | 'note' | 'sale';
   note: string;
   at: string;
 }
@@ -67,6 +67,8 @@ export interface LeadHistoryEntry {
 export interface Lead {
   id: string;
   owner_id: string;
+  /** The customer this lead became when a sale was recorded for them. */
+  customer_id: string | null;
   name: string;
   phone: string | null;
   address: string | null;

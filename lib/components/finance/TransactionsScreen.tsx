@@ -5,7 +5,12 @@ import { KeyboardAwareSectionList } from 'react-native-keyboard-aware-scroll-vie
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useRole } from '../../hooks/useAuth';
-import { isAllInOneAbroad, sellsVehicles } from '../../utils/accountFeatures';
+import { isAllInOneAbroad, itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
+import { useQueryClient } from '@tanstack/react-query';
+import { SaleLeadFields } from './SaleLeadFields';
+import { sourceNeedsNote } from './leadKit';
+import { recordLeadFromSale } from '../../utils/recordLead';
+import type { LeadSource } from '../../../types/database.types';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
 import { useConfirmNewParty, withType } from './NewPartyConfirm';
 import { highlightText } from './Highlight';
@@ -801,7 +806,12 @@ function TransactionForm({
   const withModel = type === 'purchase' && sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
   // The All In One Abroad account sells goods only: its Sale and Purchase bills have no Service table. Every other
   // account keeps it.
-  const hideServices = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
+  const shop = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
+  // Its Sale form also asks how the customer found the shop (the "Lead" block); answering it writes the buyer onto the
+  // Leads page when the sale is saved (see handleSave).
+  const queryClient = useQueryClient();
+  const [leadSource, setLeadSource] = useState<LeadSource | ''>('');
+  const [leadNote, setLeadNote] = useState('');
   const createTx = useSupabaseInsert('business_transactions');
   const { confirm: confirmSave, dialog: confirmDialog } = useConfirmSave();
   // A new customer / vendor made from a typed name is checked first, with its name editable.
@@ -1324,6 +1334,27 @@ function TransactionForm({
                 // the bill itself saved
               }
             }
+          }
+        }
+        // The All In One Abroad Sale form: when it says where the customer came from, the buyer goes onto the Leads page as
+        // Converted. A failure here doesn't undo the bill - it is saved - so it only says so.
+        if (shop && type === 'sale' && leadSource && userId) {
+          try {
+            await recordLeadFromSale({
+              ownerId: userId,
+              customerId: resolvedCustomerId,
+              name: tidyName(savedPartyName.trim()),
+              phone: customers.find((c) => c.id === resolvedCustomerId)?.phone ?? null,
+              source: leadSource,
+              sourceNote: sourceNeedsNote(leadSource) ? leadNote.trim() || null : null,
+              items: itemNamesOf(values.items),
+              amount: grandTotal,
+              billNo: billNo.trim() || null,
+              addHistory: !initial,
+            });
+            queryClient.invalidateQueries({ queryKey: ['leads'] });
+          } catch (err) {
+            showAlert('Sale saved, but not on the Leads page', getErrorMessage(err));
           }
         }
         onDone();
@@ -2055,8 +2086,11 @@ function TransactionForm({
               onExit={() => discountRef.current?.focus()}
               footer={
                 <>
-                {!hideServices && (
+                {!shop && (
                   <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent={accent} serviceNames={serviceNames} bought={type === 'purchase'} />
+                )}
+                {shop && type === 'sale' && (
+                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} />
                 )}
                 <View
                   className="flex-row flex-wrap border-t border-gray-200 bg-gray-50 px-5 py-4"
@@ -2473,9 +2507,14 @@ function TransactionForm({
               <Text className="text-sm font-bold text-gray-900">G. Total</Text>
               <Text className="text-base font-extrabold text-gray-900">NPR {formatMoney(grandTotal)}</Text>
             </View>
-            {!hideServices && (
+            {!shop && (
               <View className="mt-3">
                 <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent="#EA580C" serviceNames={serviceNames} bought={type === 'purchase'} />
+              </View>
+            )}
+            {shop && type === 'sale' && (
+              <View className="mt-3">
+                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed />
               </View>
             )}
             <TextInput

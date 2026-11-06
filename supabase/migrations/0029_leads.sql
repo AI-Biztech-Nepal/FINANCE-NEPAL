@@ -1,12 +1,15 @@
--- Leads: people who asked about the shop's products and are being followed up (the All In One Abroad account's Leads
--- page, kept the way Auto Stock Manager keeps its CRM leads). One row per person, with a status, where they came from,
--- what they want, the day to follow up, and a history of every contact (call, WhatsApp, visit, note) as a small list.
+-- Leads: the people who came to the shop and are kept on the All In One Abroad account's Leads page, the way Auto Stock
+-- Manager keeps its CRM leads. A lead is made from the Record Sale form's "Lead" block - saving a sale writes the buyer in
+-- as Converted - and is then followed on the Leads page. One row per person, with a status, where they came from, what
+-- they want, the day to follow up, and a history of every contact (call, WhatsApp, visit, note, sale) as a small list.
 -- Owner-scoped like every other finance table. Safe to run more than once.
 begin;
 
 create table if not exists public.leads (
   id            uuid primary key default gen_random_uuid(),
   owner_id      uuid not null references auth.users(id),
+  -- The customer record the lead became when a sale was recorded for them (the Record Sale form's "Lead" block).
+  customer_id   uuid references public.customers(id) on delete set null,
   name          text not null,
   phone         text,
   address       text,
@@ -15,7 +18,7 @@ create table if not exists public.leads (
   interested_in text,
   status        text not null default 'new' check (status in ('new', 'contacted', 'interested', 'converted', 'lost')),
   follow_up_on  date,
-  -- [{ "kind": "call" | "whatsapp" | "visit" | "note", "note": "...", "at": "<timestamp>" }], oldest first.
+  -- [{ "kind": "call" | "whatsapp" | "visit" | "note" | "sale", "note": "...", "at": "<timestamp>" }], oldest first.
   history       jsonb not null default '[]'::jsonb,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()

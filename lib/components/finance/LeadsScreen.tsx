@@ -7,8 +7,9 @@ import { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../hooks/useAuth';
-import { useSupabaseDelete, useSupabaseInsert, useSupabaseQuery, useSupabaseUpdate } from '../../hooks/useSupabase';
-import { BookPage, BookStat, BookStats, ToolbarButton, ToolbarSearch, useBookLayout } from './BookKit';
+import { useSupabaseDelete, useSupabaseQuery, useSupabaseUpdate } from '../../hooks/useSupabase';
+import { BookPage, BookStat, BookStats, ToolbarSearch, useBookLayout } from './BookKit';
+import { LEAD_SOURCES, sourceNeedsNote } from './leadKit';
 import { toBsHistoryLabel } from '../../utils/nepaliDate';
 import { localTodayIso } from '../../utils/localDate';
 import { showAlert, getErrorMessage } from '../../utils/alert';
@@ -28,21 +29,19 @@ const STATUSES: { key: LeadStatus; label: string; color: string; bg: string }[] 
 ];
 const STATUS = Object.fromEntries(STATUSES.map((s) => [s.key, s])) as Record<LeadStatus, (typeof STATUSES)[number]>;
 
-const SOURCES: { key: LeadSource; label: string; icon: IconName; color: string; bg: string }[] = [
-  { key: 'walk_in', label: 'Walk-in', icon: 'walk', color: '#047857', bg: '#ECFDF5' },
-  { key: 'website', label: 'Website', icon: 'globe', color: '#4338CA', bg: '#EEF2FF' },
-  { key: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1D4ED8', bg: '#EFF6FF' },
-  { key: 'tiktok', label: 'TikTok', icon: 'logo-tiktok', color: '#BE123C', bg: '#FFF1F2' },
-  { key: 'referral', label: 'Referral', icon: 'people', color: '#B45309', bg: '#FFFBEB' },
-  { key: 'other', label: 'Other', icon: 'ellipsis-horizontal', color: '#475569', bg: '#F1F5F9' },
-];
+const SOURCES = LEAD_SOURCES;
 const SOURCE = Object.fromEntries(SOURCES.map((s) => [s.key, s])) as Record<LeadSource, (typeof SOURCES)[number]>;
 
+// What can be logged by hand from a lead; a Sale line is written by the Record Sale form, so it has no button here.
 const KINDS: { key: LeadHistoryEntry['kind']; label: string; icon: IconName }[] = [
   { key: 'call', label: 'Call', icon: 'call' },
   { key: 'whatsapp', label: 'WhatsApp', icon: 'logo-whatsapp' },
   { key: 'visit', label: 'Visit', icon: 'storefront' },
   { key: 'note', label: 'Note', icon: 'document-text' },
+];
+const HISTORY_KINDS: { key: LeadHistoryEntry['kind']; label: string; icon: IconName }[] = [
+  ...KINDS,
+  { key: 'sale', label: 'Sale', icon: 'bag-handle' },
 ];
 
 interface LeadForm {
@@ -55,8 +54,6 @@ interface LeadForm {
   status: LeadStatus;
   follow_up_on: string;
 }
-
-const EMPTY_FORM: LeadForm = { name: '', phone: '', address: '', source: 'walk_in', source_note: '', interested_in: '', status: 'new', follow_up_on: '' };
 
 const formOf = (l: Lead): LeadForm => ({
   name: l.name,
@@ -165,13 +162,12 @@ export function LeadsScreen() {
     all: true,
     enabled: !!userId,
   });
-  const createLead = useSupabaseInsert('leads');
   const updateLead = useSupabaseUpdate('leads');
   const deleteLead = useSupabaseDelete('leads');
 
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState<{ id: string | null; form: LeadForm; history: LeadHistoryEntry[] } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; form: LeadForm; history: LeadHistoryEntry[] } | null>(null);
   const [logKind, setLogKind] = useState<LeadHistoryEntry['kind']>('call');
   const [logNote, setLogNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -200,11 +196,6 @@ export function LeadsScreen() {
   const set = <K extends keyof LeadForm>(key: K) => (value: LeadForm[K]) =>
     setEditing((e) => (e ? { ...e, form: { ...e.form, [key]: value } } : e));
 
-  const openNew = () => {
-    setLogKind('call');
-    setLogNote('');
-    setEditing({ id: null, form: EMPTY_FORM, history: [] });
-  };
   const openEdit = (l: Lead) => {
     setLogKind('call');
     setLogNote('');
@@ -216,7 +207,7 @@ export function LeadsScreen() {
     phone: f.phone.trim() || null,
     address: f.address.trim() || null,
     source: f.source,
-    source_note: f.source === 'referral' || f.source === 'other' ? f.source_note.trim() || null : null,
+    source_note: sourceNeedsNote(f.source) ? f.source_note.trim() || null : null,
     interested_in: f.interested_in.trim() || null,
     status: f.status,
     follow_up_on: f.follow_up_on || null,
@@ -232,8 +223,7 @@ export function LeadsScreen() {
     setBusy(true);
     try {
       const values = valuesOf(editing.form);
-      if (editing.id) await updateLead.mutateAsync({ id: editing.id, values });
-      else await createLead.mutateAsync({ owner_id: userId, ...values, history: [] });
+      await updateLead.mutateAsync({ id: editing.id, values });
       setEditing(null);
     } catch (err) {
       showAlert('Could not save', getErrorMessage(err));
@@ -311,7 +301,6 @@ export function LeadsScreen() {
         </Text>
         <View className="flex-row flex-wrap items-center" style={{ gap: 8 }}>
           <ToolbarSearch value={search} onChange={setSearch} placeholder="Search name, phone, interest..." wide={layout.wide} />
-          <ToolbarButton icon="add" label="Add Lead" onPress={openNew} />
         </View>
       </View>
 
@@ -343,8 +332,10 @@ export function LeadsScreen() {
       {shown.length === 0 ? (
         <View className="items-center rounded-xl border border-gray-200 bg-white py-12">
           <Ionicons name="megaphone-outline" size={34} color="#D1D5DB" />
-          <Text className="mt-2 font-medium text-gray-500">{leads.length === 0 ? 'No leads kept yet' : 'No leads here'}</Text>
-          <Text className="mt-1 text-xs text-gray-400">{leads.length === 0 ? 'Tap "Add Lead" to keep the first one' : 'Try another tab or clear the search'}</Text>
+          <Text className="mt-2 font-medium text-gray-500">{leads.length === 0 ? 'No leads yet' : 'No leads here'}</Text>
+          <Text className="mt-1 px-6 text-center text-xs text-gray-400">
+            {leads.length === 0 ? 'Leads come from sales: on Record Sale, pick where the customer found the shop under Lead.' : 'Try another tab or clear the search'}
+          </Text>
         </View>
       ) : (
         <View style={{ gap: 10 }}>
@@ -426,7 +417,7 @@ export function LeadsScreen() {
 
                   {!!last && (
                     <Text className="mt-2 text-xs text-gray-400" numberOfLines={1}>
-                      {KINDS.find((k) => k.key === last.kind)?.label} · {dayLabel(last.at)}
+                      {HISTORY_KINDS.find((k) => k.key === last.kind)?.label} · {dayLabel(last.at)}
                       {last.note ? ` · ${last.note}` : ''}
                     </Text>
                   )}
@@ -445,7 +436,7 @@ export function LeadsScreen() {
               style={{ maxWidth: 560, maxHeight: '92%', padding: 20, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' } as object}
             >
               <View className="mb-3 flex-row items-center justify-between">
-                <Text className="text-lg font-extrabold text-gray-900">{editing.id ? 'Edit lead' : 'New lead'}</Text>
+                <Text className="text-lg font-extrabold text-gray-900">Edit lead</Text>
                 <Pressable onPress={() => setEditing(null)} hitSlop={8} accessibilityLabel="Close">
                   <Ionicons name="close" size={24} color="#374151" />
                 </Pressable>
@@ -458,7 +449,6 @@ export function LeadsScreen() {
                     ref={nameRef}
                     value={form.name}
                     onChangeText={set('name')}
-                    autoFocus={!editing.id && layout.wide}
                     placeholder="Full name"
                     placeholderTextColor="#9CA3AF"
                     className="rounded-lg bg-white px-3 py-2.5 text-sm text-gray-900"
@@ -481,7 +471,7 @@ export function LeadsScreen() {
                     <Chip key={s.key} label={s.label} icon={s.icon} on={form.source === s.key} onPress={() => set('source')(s.key)} />
                   ))}
                 </View>
-                {(form.source === 'referral' || form.source === 'other') && (
+                {sourceNeedsNote(form.source) && (
                   <Field
                     label={form.source === 'referral' ? 'Referred by' : 'Details'}
                     value={form.source_note}
@@ -535,7 +525,7 @@ export function LeadsScreen() {
                     ) : (
                       <View className="mt-3" style={{ gap: 8 }}>
                         {[...editing.history].reverse().map((h, i) => {
-                          const kind = KINDS.find((k) => k.key === h.kind);
+                          const kind = HISTORY_KINDS.find((k) => k.key === h.kind);
                           return (
                             <View key={`${h.at}-${i}`} className="flex-row" style={{ gap: 8 }}>
                               <Ionicons name={kind?.icon ?? 'document-text'} size={15} color="#6B7280" style={{ marginTop: 1 }} />
