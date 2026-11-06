@@ -1,14 +1,16 @@
 // lib/components/finance/VisitsScreen.tsx
 //
-// Visits (Marketing): who visits the website. The website counts each page it opens (see the snippet in its main.js, which
-// calls record_visit); the totals for the period are worked out by the database (visits_summary, see 0030_marketing.sql).
-// Shown: visits, visitors, the busiest pages, where people came from, and phone against computer, over Today, Yesterday,
-// 7 days, a month or a year.
+// Visits (Marketing): who visits the website. The website counts each page it opens and how long the visitor stayed on it
+// (website/visit-tracker.js, which calls record_visit); the totals for the period are worked out by the database
+// (visits_summary, see 0030_marketing.sql) and the visitors one by one, with minutes and pages, by visits_list (0031_visit_time.sql).
+// Shown: visits, visitors, how long people stay, the busiest pages, where people came from, phone against computer, and
+// a card per visitor with the pages they stayed on and for how long, over Today, Yesterday, 7 days, a month or a year.
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../supabase';
+import { formatStay, pageLabel, visitorLabel, visitWhen } from '../../utils/visitTime';
 import { BookPage, BookStat, BookStats, FilterTabs, useBookLayout } from './BookKit';
 
 type Range = 'today' | 'yesterday' | 'week' | 'month' | 'year';
@@ -33,6 +35,28 @@ interface Summary {
   days: Counted[];
 }
 
+/** One visitor's stay, from visits_list: the pages they opened in order, each with the seconds spent on it. */
+interface VisitPage {
+  path: string;
+  at: string;
+  seconds: number;
+}
+interface Visit {
+  visitor: string;
+  started_at: string;
+  seconds: number;
+  device: string;
+  referrer: string | null;
+  pages: VisitPage[];
+}
+interface VisitList {
+  /** Every visit in the period; `visits` below is only the newest of them. */
+  sessions: number;
+  avg_seconds: number;
+  visits: Visit[];
+}
+const PAGES_SHOWN = 12;
+
 /** The period as [from, to) in this computer's own time, from midnight. */
 function windowOf(range: Range): { from: string; to: string } {
   const d = new Date();
@@ -46,8 +70,6 @@ function windowOf(range: Range): { from: string; to: string } {
     case 'year': return { from: at(-364), to: at(1) };
   }
 }
-
-const pageName = (path: string) => (path === '/' || path === '/index.html' ? 'Home' : path.replace(/^\//, '').replace(/\.html$/, '').replace(/\.php$/, '') || 'Home');
 
 /** One list as bars: name, count and a bar sized against the biggest. */
 function BarList({ title, rows, icon }: { title: string; rows: Counted[]; icon: keyof typeof Ionicons.glyphMap }) {
@@ -79,6 +101,46 @@ function BarList({ title, rows, icon }: { title: string; rows: Counted[]; icon: 
   );
 }
 
+/** One visitor: who, when, from where, how long they stayed in all, and each page with the time spent on it. */
+function VisitCard({ visit }: { visit: Visit }) {
+  const device = visit.device === 'mobile' ? 'Phone' : visit.device === 'tablet' ? 'Tablet' : 'Computer';
+  const longest = Math.max(1, ...visit.pages.map((p) => p.seconds));
+  const shown = visit.pages.slice(0, PAGES_SHOWN);
+  const hidden = visit.pages.length - shown.length;
+  return (
+    <View className="rounded-xl border border-gray-200 bg-white p-4" style={{ flexGrow: 1, flexBasis: 340 }}>
+      <View className="flex-row items-start justify-between" style={{ gap: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Text className="text-sm font-bold text-gray-900" numberOfLines={1}>{visitorLabel(visit.visitor)}</Text>
+          <Text className="mt-0.5 text-xs text-gray-500">
+            {visitWhen(visit.started_at)} · {device} · {visit.referrer ? `from ${visit.referrer}` : 'Direct'}
+          </Text>
+        </View>
+        <View className="items-end">
+          <Text className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Stayed</Text>
+          <Text className="text-base font-extrabold text-blue-700" accessibilityLabel={`Stayed ${formatStay(visit.seconds)}`}>{formatStay(visit.seconds)}</Text>
+        </View>
+      </View>
+      <View className="mt-3 border-t border-gray-100 pt-3" style={{ gap: 8 }}>
+        {shown.map((p, i) => (
+          <View key={`${p.at}-${i}`}>
+            <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
+              <Text className="text-xs font-semibold text-gray-700" style={{ flex: 1 }} numberOfLines={1}>{pageLabel(p.path)}</Text>
+              <Text className="text-xs font-bold text-gray-900">{formatStay(p.seconds)}</Text>
+            </View>
+            {p.seconds > 0 ? (
+              <View className="mt-1 h-1 overflow-hidden rounded-full bg-gray-100">
+                <View style={{ width: `${Math.max(3, (p.seconds / longest) * 100)}%`, height: 4, backgroundColor: '#60A5FA', borderRadius: 999 }} />
+              </View>
+            ) : null}
+          </View>
+        ))}
+        {hidden > 0 ? <Text className="text-[11px] text-gray-400">+ {hidden} more {hidden === 1 ? 'page' : 'pages'}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 export function VisitsScreen() {
   const layout = useBookLayout();
   const [range, setRange] = useState<Range>('week');
@@ -92,8 +154,19 @@ export function VisitsScreen() {
     },
     staleTime: 30_000,
   });
+  // Asked apart from the totals: if 0031_visit_time.sql has not been run yet, the totals above still show.
+  const stays = useQuery<VisitList>({
+    queryKey: ['visits-list', range],
+    queryFn: async () => {
+      const { from, to } = windowOf(range);
+      const { data: list, error: rpcError } = await (supabase as any).rpc('visits_list', { p_from: from, p_to: to, p_limit: 100 });
+      if (rpcError) throw rpcError;
+      return list as VisitList;
+    },
+    staleTime: 30_000,
+  });
 
-  const pages = useMemo(() => (data?.pages ?? []).map((p) => ({ ...p, name: pageName(p.name) })), [data]);
+  const pages = useMemo(() => (data?.pages ?? []).map((p) => ({ ...p, name: pageLabel(p.name) })), [data]);
   const devices = useMemo(() => (data?.devices ?? []).map((p) => ({ ...p, name: p.name === 'mobile' ? 'Phone' : p.name === 'tablet' ? 'Tablet' : 'Computer' })), [data]);
   const days = data?.days ?? [];
   const peak = Math.max(1, ...days.map((d) => d.count));
@@ -121,6 +194,7 @@ export function VisitsScreen() {
             <BookStat label="Visits" value={data.visits.toLocaleString()} color="#1D4ED8" />
             <BookStat label="Visitors" value={data.visitors.toLocaleString()} color="#047857" />
             <BookStat label="Pages per visitor" value={data.visitors ? (data.visits / data.visitors).toFixed(1) : '0'} color="#374151" />
+            <BookStat label="Average stay" value={stays.data ? formatStay(stays.data.avg_seconds) : '–'} color="#B45309" />
           </BookStats>
 
           {data.visits === 0 ? (
@@ -147,6 +221,39 @@ export function VisitsScreen() {
                 <BarList title="Busiest pages" rows={pages} icon="document-text-outline" />
                 <BarList title="Where they came from" rows={data.referrers} icon="navigate-outline" />
                 <BarList title="Phone or computer" rows={devices} icon="phone-portrait-outline" />
+              </View>
+
+              <View style={{ gap: 12 }}>
+                <View className="flex-row items-center" style={{ gap: 8 }}>
+                  <Ionicons name="time-outline" size={16} color="#2563EB" />
+                  <Text className="text-sm font-bold text-gray-900">Who visited, and how long they stayed</Text>
+                </View>
+                {stays.isLoading ? (
+                  <ActivityIndicator color="#2563EB" />
+                ) : stays.error || !stays.data ? (
+                  <View className="rounded-xl border border-gray-200 bg-white px-6 py-8">
+                    <Text className="text-center text-sm font-medium text-gray-500">Time on the site could not be read</Text>
+                    <Text className="mt-1 text-center text-xs text-gray-400">Run the 0031_visit_time.sql migration in Supabase, then reload.</Text>
+                  </View>
+                ) : (
+                  <>
+                    {stays.data.avg_seconds === 0 ? (
+                      <Text className="text-xs text-gray-400">
+                        No time has been recorded yet. It is counted once the website has the visit-tracker.js update.
+                      </Text>
+                    ) : null}
+                    <View className="flex-row flex-wrap" style={{ gap: 12 }}>
+                      {stays.data.visits.map((v) => (
+                        <VisitCard key={`${v.visitor}-${v.started_at}`} visit={v} />
+                      ))}
+                    </View>
+                    {stays.data.sessions > stays.data.visits.length ? (
+                      <Text className="text-center text-xs text-gray-400">
+                        Showing the newest {stays.data.visits.length} of {stays.data.sessions.toLocaleString()} visits.
+                      </Text>
+                    ) : null}
+                  </>
+                )}
               </View>
             </>
           )}

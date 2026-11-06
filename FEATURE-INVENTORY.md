@@ -35,7 +35,7 @@ That seam is the natural place to join `core`, but only once Finance lives in th
 | `finance.crm` | CRM | `finance.leads` | Off. On only for All In One Abroad | `crm`; `CrmScreen`, `crmKit`, `CustomerProfile`. Reads `leads` and `customers`; no table of its own. |
 | `finance.share` | Share (product captions) | `finance.website` ? | Off. On only for All In One Abroad | `share`; `ShareScreen`. Reads `products`. **`const SITE = 'allinoneabroad.com'` is hard-coded**: it belongs in this feature's `config`. |
 | `finance.offers` | Offers (prize wheel) | `finance.website` | Off. On only for All In One Abroad | `offer_prizes`, `offer_spins` (0030); `offer_prizes_public()`, `spin_wheel()` (**anon**); `offers`; `OffersScreen`. Only import from leads is the `dayLabel` date helper. |
-| `finance.visits` | Website visits | `finance.website` | Off. On only for All In One Abroad | `site_visits` (0030); `record_visit()` (**anon**), `visits_summary()`; `visits`; `VisitsScreen`. |
+| `finance.visits` | Website visits | `finance.website` | Off. On only for All In One Abroad | `site_visits` (0030; `view_id`, `seconds` in 0031); `record_visit()` (**anon**, called again by `website/visit-tracker.js` as the visitor stays), `visits_summary()`, `visits_list()` (0031); `visits`; `VisitsScreen`, `lib/utils/visitTime.ts`. |
 
 `?` = the screen reads the other feature's data (vehicle names from stock) but could work without it. Confirm with
 the owner of the vehicle accounts before writing `requires`.
