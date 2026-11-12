@@ -52,6 +52,7 @@ begin
       ('admin', 'finance.finance_is_admin()')
     ) w(name, cond) loop
       execute format('drop policy if exists %I on finance.%I', t.tbl || '_all_' || who.name, t.tbl);
+      execute format('drop policy if exists %I on finance.%I', t.tbl || '_' || who.name || '_all', t.tbl);
       execute format('drop policy if exists %I on finance.%I', t.tbl || '_' || who.name || '_read', t.tbl);
       execute format('drop policy if exists %I on finance.%I', t.tbl || '_' || who.name || '_insert', t.tbl);
       execute format('drop policy if exists %I on finance.%I', t.tbl || '_' || who.name || '_update', t.tbl);
