@@ -119,7 +119,6 @@ const HIDDEN: [string, string][] = [
   ['customers', 'Ledger'],
   ['customer/[id]', 'Ledger'],
   ['transactions', 'Statement'],
-  ['leads', 'Leads'],
   ['crm', 'CRM'],
   ['share', 'Share'],
   ['offers', 'Offers'],
