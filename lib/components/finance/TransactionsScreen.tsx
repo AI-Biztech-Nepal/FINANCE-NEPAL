@@ -5,12 +5,7 @@ import { KeyboardAwareSectionList } from 'react-native-keyboard-aware-scroll-vie
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useRole } from '../../hooks/useAuth';
-import { isAllInOneAbroad, itemNamesOf, sellsVehicles } from '../../utils/accountFeatures';
-import { useQueryClient } from '@tanstack/react-query';
-import { SaleLeadFields } from './SaleLeadFields';
-import { sourceNeedsNote } from './leadKit';
-import { recordLeadFromSale } from '../../utils/recordLead';
-import type { LeadSource } from '../../../types/database.types';
+import { isAllInOneAbroad, sellsVehicles } from '../../utils/accountFeatures';
 import { usePartyTypes } from '../../hooks/usePartyTypes';
 import { useConfirmNewParty, withType } from './NewPartyConfirm';
 import { highlightText } from './Highlight';
@@ -806,12 +801,7 @@ function TransactionForm({
   const withModel = type === 'purchase' && sellsVehicles(profile?.business_name?.trim() || profile?.full_name);
   // The All In One Abroad account sells goods only: its Sale and Purchase bills have no Service table. Every other
   // account keeps it.
-  const shop = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
-  // Its Sale form also asks how the customer found the shop (the "Lead" block); answering it writes the buyer onto the
-  // Leads page when the sale is saved (see handleSave).
-  const queryClient = useQueryClient();
-  const [leadSource, setLeadSource] = useState<LeadSource | ''>('');
-  const [leadNote, setLeadNote] = useState('');
+  const hideServices = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
   const createTx = useSupabaseInsert('business_transactions');
   const { confirm: confirmSave, dialog: confirmDialog } = useConfirmSave();
   // A new customer / vendor made from a typed name is checked first, with its name editable.
@@ -1318,11 +1308,10 @@ function TransactionForm({
           payment_mode: initial?.payment_mode ?? ('cash' as const),
           bank_account_id: initial?.bank_account_id ?? null,
         };
-        let savedSaleId: string | null = initial?.id ?? null;
         if (initial) {
           await updateTx.mutateAsync({ id: initial.id, values });
         } else {
-          savedSaleId = (await createTx.mutateAsync({ owner_id: userId, ...values })).id;
+          await createTx.mutateAsync({ owner_id: userId, ...values });
           // The bill was recorded for units already on the shelf, and saving it counted them again: put the
           // item's stock back to what it was. A failure here doesn't undo the bill.
           if (itemPrefill?.keepStock != null) {
@@ -1335,28 +1324,6 @@ function TransactionForm({
                 // the bill itself saved
               }
             }
-          }
-        }
-        // The All In One Abroad Sale form: when it says where the customer came from, the buyer goes onto the Leads page as
-        // Converted. A failure here doesn't undo the bill - it is saved - so it only says so.
-        if (shop && type === 'sale' && leadSource && userId) {
-          try {
-            await recordLeadFromSale({
-              ownerId: userId,
-              customerId: resolvedCustomerId,
-              name: tidyName(savedPartyName.trim()),
-              phone: customers.find((c) => c.id === resolvedCustomerId)?.phone ?? null,
-              source: leadSource,
-              sourceNote: sourceNeedsNote(leadSource) ? leadNote.trim() || null : null,
-              items: itemNamesOf(values.items),
-              amount: grandTotal,
-              billNo: billNo.trim() || null,
-              saleId: savedSaleId,
-              addHistory: !initial,
-            });
-            queryClient.invalidateQueries({ queryKey: ['leads'] });
-          } catch (err) {
-            showAlert('Sale saved, but not on the Leads page', getErrorMessage(err));
           }
         }
         onDone();
@@ -1761,91 +1728,6 @@ function TransactionForm({
     return options;
   }, [vendorSuggestions, vendorFocused, isBill, partyName, customerId, customers, type, partyTypeName]);
 
-  // The Sale form's Lead block, Referral: the same suggestion box as the Customer field - saved customers and vendors
-  // (they share one list), phone contacts, and "Add ... as new customer" - with the buyer themselves left out.
-  const [referrerFocused, setReferrerFocused] = useState(false);
-  const referrerPool = useMemo(() => customers.filter((c) => c.id !== customerId), [customers, customerId]);
-  const referrerSaved = referrerPool.some((c) => c.name.trim().toLowerCase() === leadNote.trim().toLowerCase());
-  const referrerSuggestions = useMemo<CustomerSuggestion[]>(() => {
-    if (!referrerFocused || leadSource !== 'referral' || referrerSaved) return [];
-    const q = leadNote.trim();
-    return buildCustomerSuggestions(referrerPool, phoneContacts.contacts, q, q ? 6 : 8, true);
-  }, [referrerFocused, leadSource, referrerSaved, leadNote, referrerPool, phoneContacts.contacts]);
-  const referrerOptions = useMemo<SuggestOption[]>(() => {
-    const options: SuggestOption[] = referrerSuggestions.map((s) => ({
-      key: s.key,
-      label: s.name,
-      hint: s.customer ? s.phone : 'From contacts',
-      sub: s.customer ? typeOf(s.customer) : null,
-    }));
-    const typed = leadNote.trim();
-    if (referrerFocused && leadSource === 'referral' && typed && !referrerSaved) {
-      options.push({ key: ADD_PARTY_KEY, label: `Add "${typed}" as new customer`, kind: 'add' });
-    }
-    return options;
-  }, [referrerSuggestions, referrerFocused, leadSource, leadNote, referrerSaved, partyTypeName]);
-
-  /** Saves a person the referral names - from the phone's contacts or typed in - as a customer, after the same
-   * confirmation the Customer field asks, and takes their name. Cancelled: the typed name is dropped. */
-  async function addReferrer(name: string, phone: string | null) {
-    const existing = phone ? customers.find((c) => c.phone === phone) : undefined;
-    if (existing) {
-      setLeadNote(existing.name);
-      return;
-    }
-    const asked = await askNewParty({ name, kind: 'customer' });
-    if (!asked) {
-      setLeadNote('');
-      return;
-    }
-    try {
-      const created = await createCustomer.mutateAsync({ owner_id: userId, name: asked.name, phone, ...withType(asked) });
-      setLeadNote(created.name);
-    } catch (err) {
-      showAlert('Could not add customer', getErrorMessage(err));
-    }
-  }
-
-  const referralField = (accentColor: string) => (
-    <SuggestInput
-      value={leadNote}
-      onChangeText={setLeadNote}
-      options={referrerOptions}
-      onSelectOption={async (opt) => {
-        if (opt.key === ADD_PARTY_KEY) {
-          await addReferrer(tidyName(leadNote.trim()), null);
-          return;
-        }
-        const s = referrerSuggestions.find((x) => x.key === opt.key);
-        if (!s) return;
-        if (s.customer) setLeadNote(s.name);
-        else await addReferrer(s.name, s.phone);
-      }}
-      onFocus={() => setReferrerFocused(true)}
-      onBlur={() => setReferrerFocused(false)}
-      enterAddsNew
-      showWhenEmpty
-      placeholder="Referred by - pick a customer or vendor, or type a name"
-      accessibilityLabel="Referred by"
-      accent={accentColor}
-      compact
-      inputClassName="rounded-lg px-3 py-2.5 text-xs font-semibold text-gray-900"
-      inputStyle={[
-        { borderWidth: 1, borderColor: referrerFocused ? accentColor : '#D1D5DB', backgroundColor: '#FFFFFF' },
-        referrerFocused ? { boxShadow: `0 0 0 3px ${accentColor}29` } : null,
-        { outlineStyle: 'none' } as object,
-      ]}
-      adornmentWidth={54}
-      adornment={
-        referrerSaved ? (
-          <Ionicons name="checkmark-circle" size={16} color={accentColor} />
-        ) : leadNote.trim() ? (
-          <Text className="text-[10px] font-bold capitalize text-gray-400">New</Text>
-        ) : null
-      }
-    />
-  );
-
   useEffect(() => {
     if (!desktopWeb || !isBill) return;
     const last = items[items.length - 1];
@@ -2173,11 +2055,8 @@ function TransactionForm({
               onExit={() => discountRef.current?.focus()}
               footer={
                 <>
-                {!shop && (
+                {!hideServices && (
                   <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent={accent} serviceNames={serviceNames} bought={type === 'purchase'} />
-                )}
-                {shop && type === 'sale' && (
-                  <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent={accent} referralField={referralField(accent)} />
                 )}
                 <View
                   className="flex-row flex-wrap border-t border-gray-200 bg-gray-50 px-5 py-4"
@@ -2594,14 +2473,9 @@ function TransactionForm({
               <Text className="text-sm font-bold text-gray-900">G. Total</Text>
               <Text className="text-base font-extrabold text-gray-900">NPR {formatMoney(grandTotal)}</Text>
             </View>
-            {!shop && (
+            {!hideServices && (
               <View className="mt-3">
                 <ServiceChargesTable rows={serviceRows} onChange={setServiceRows} accent="#EA580C" serviceNames={serviceNames} bought={type === 'purchase'} />
-              </View>
-            )}
-            {shop && type === 'sale' && (
-              <View className="mt-3" style={{ zIndex: 30 }}>
-                <SaleLeadFields source={leadSource} note={leadNote} onSource={setLeadSource} onNote={setLeadNote} accent="#EA580C" framed referralField={referralField('#EA580C')} />
               </View>
             )}
             <TextInput
