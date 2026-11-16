@@ -88,27 +88,27 @@ function vehicleNav(items: WebNavItem[]): WebNavItem[] {
   );
 }
 
-// Sales and Purchase as the Finance page has them, taken from its list so label, icon and link never drift: each opens a
-// new bill. The side panel leaves them out for most accounts - they are buttons on the Day Book. The list of sales and its
-// totals are the Sales Report, so Sales here is only the form.
-const SALE_AND_PURCHASE_NAV: WebNavItem[] = financeShortcuts('/(store)')
-  .filter((s) => s.key === 'sales' || s.key === 'purchase')
-  .map(({ href, label, icon }) => ({ href, label, icon }));
+// Sales and Purchase open a new bill. The All In One Abroad side panel has neither: they are buttons on the Day Book. On
+// the phone's list they are also Finance's children, so the shop's list drops them there too.
+const SALE_AND_PURCHASE_HREFS = new Set(
+  financeShortcuts('/(store)')
+    .filter((s) => s.key === 'sales' || s.key === 'purchase')
+    .map((s) => s.href)
+);
 
-// The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
-// Dashboard instead of inside Finance: Stock and Inventory, then Sales and Purchase. Everything else stays where it is.
+// The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own page right below the
+// Dashboard instead of inside Finance: Stock and Inventory. Everything else stays where it is.
 // Stock and Inventory is taken from Finance's own list so its label and icon never drift.
 function shopNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
   if (!stock) return items;
-  // Moved, not copied: on the phone's list Sales and Purchase are also Finance's children, so they leave it.
-  const moved = new Set([stock.href, ...SALE_AND_PURCHASE_NAV.map((item) => item.href)]);
+  // Moved, not copied: Stock and Inventory leaves Finance's list; Sales and Purchase just leave it.
+  const gone = new Set([stock.href, ...SALE_AND_PURCHASE_HREFS]);
   const [dashboard, ...rest] = items;
   return [
     dashboard,
     stock,
-    ...SALE_AND_PURCHASE_NAV,
-    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !moved.has(child.href)) } : item)),
+    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !gone.has(child.href)) } : item)),
   ];
 }
 
