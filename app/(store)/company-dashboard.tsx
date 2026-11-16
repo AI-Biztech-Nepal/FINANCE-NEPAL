@@ -883,27 +883,6 @@ export default function StoreDashboard() {
     </Panel>
   );
 
-  const quick = (
-    <Panel title="Quick actions">
-      <View className="flex-row flex-wrap" style={{ gap: 10 }}>
-        {[
-          { label: 'New sale', icon: 'trending-up' as const, path: '/(store)/transactions?type=sale&add=1' },
-          { label: 'New purchase', icon: 'cart' as const, path: '/(store)/transactions?type=purchase&add=1' },
-          { label: 'Received', icon: 'arrow-down-circle' as const, path: '/(store)/quick-payment?type=in' },
-          { label: 'Payment out', icon: 'arrow-up-circle' as const, path: '/(store)/quick-payment?type=out' },
-          { label: 'Ledger', icon: 'people' as const, path: '/(store)/customers' },
-          { label: 'Day book', icon: 'book' as const, path: '/(store)/daybook' },
-          { label: 'Stock', icon: 'cube' as const, path: '/(store)/inventory' },
-        ].map((a) => (
-          <Pressable key={a.label} onPress={() => go(a.path)} className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5" style={{ gap: 8 }}>
-            <Ionicons name={a.icon} size={16} color="#1E3A8A" />
-            <Text className="text-[13px] font-semibold text-gray-800">{a.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </Panel>
-  );
-
   return (
     <ScrollView className="flex-1" style={{ backgroundColor: '#F6F7FB' }} contentContainerStyle={{ padding: wide ? 28 : 14, gap: 18, paddingBottom: 60 }}>
       {hero}
@@ -913,7 +892,6 @@ export default function StoreDashboard() {
       {row([trend, <RecentActivityCard key="recent" basePath="/(store)" />], [1.5, 1])}
       {row([money, ageing], [1.3, 1])}
       {row([expenses, customersCard], [1, 1.4])}
-      {quick}
     </ScrollView>
   );
 }
