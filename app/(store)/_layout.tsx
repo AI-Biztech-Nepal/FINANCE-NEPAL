@@ -95,25 +95,8 @@ const SALE_AND_PURCHASE_NAV: WebNavItem[] = financeShortcuts('/(store)')
   .filter((s) => s.key === 'sales' || s.key === 'purchase')
   .map(({ href, label, icon }) => ({ href, label, icon }));
 
-// Marketing: everything that brings customers in, as one group of the All In One Abroad account only (the way Auto Stock
-// Manager groups it). It is a title over its pages - it opens the first, Leads, and only the page lights up.
-const MARKETING_NAV: WebNavItem = {
-  href: '/(store)/leads',
-  label: 'Marketing',
-  icon: 'megaphone',
-  heading: true,
-  collapsible: true,
-  children: [
-    { href: '/(store)/leads', label: 'Leads', icon: 'people' },
-    { href: '/(store)/crm', label: 'CRM', icon: 'heart' },
-    { href: '/(store)/share', label: 'Share', icon: 'share-social' },
-    { href: '/(store)/offers', label: 'Offers', icon: 'gift' },
-    { href: '/(store)/visits', label: 'Visits', icon: 'eye' },
-  ],
-};
-
 // The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
-// Dashboard instead of inside Finance: Stock and Inventory, then Sales, Purchase and Marketing. Everything else stays where it is.
+// Dashboard instead of inside Finance: Stock and Inventory, then Sales and Purchase. Everything else stays where it is.
 // Stock and Inventory is taken from Finance's own list so its label and icon never drift.
 function shopNav(items: WebNavItem[]): WebNavItem[] {
   const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
@@ -125,7 +108,6 @@ function shopNav(items: WebNavItem[]): WebNavItem[] {
     dashboard,
     stock,
     ...SALE_AND_PURCHASE_NAV,
-    MARKETING_NAV,
     ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !moved.has(child.href)) } : item)),
   ];
 }
