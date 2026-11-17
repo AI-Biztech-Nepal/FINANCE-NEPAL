@@ -1,12 +1,15 @@
 // app/(store)/_layout.tsx
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, View, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useFeature, useFeaturesLoaded } from '../../lib/features/useFeatures';
+import { useAuthStore } from '../../lib/hooks/useAuth';
+import { isAllInOneAbroad } from '../../lib/utils/accountFeatures';
 import { RoleGuard } from '../../lib/components/RoleGuard';
 import { freshScreenLayout } from '../../lib/components/FreshScreen';
 import { TabIcon } from '../../lib/components/TabIcon';
 import { PortalHeaderBar } from '../../lib/components/PortalHeaderBar';
+import { MobileNavDrawer } from '../../lib/components/MobileNavDrawer';
 import { ROLE_ACCENT } from '../../lib/constants/roleColors';
 import { WebSidebarShell, WEB_SIDEBAR_MIN_WIDTH, type WebNavItem } from '../../lib/components/web/WebSidebarShell';
 import { shortcuts as financeShortcuts } from '../../lib/components/finance/FinanceDashboardScreen';
@@ -37,23 +40,30 @@ const REPORT_FAMILY: WebNavItem[] = [
   { href: '/(store)/to-give', label: 'Payable Report', icon: 'storefront' },
 ];
 
-const NAV_ITEMS: WebNavItem[] = [
+const navWith = (pages: ReturnType<typeof financeShortcuts>): WebNavItem[] => [
   { href: '/(store)/company-dashboard', label: 'Dashboard', icon: 'grid' },
   {
     href: '/(store)/finance',
     label: 'Finance',
     icon: 'wallet',
-    children: financeShortcuts('/(store)')
-      .filter((s) => !DAYBOOK_ENTRY_KEYS.has(s.key))
-      .sort((a, b) => financeNavRank(a.key) - financeNavRank(b.key))
-      .map((s) => ({
-        href: s.href,
-        label: s.label,
-        icon: s.icon,
-        ...(s.key === 'report' ? { children: REPORT_FAMILY } : null),
-      })),
+    children: pages.map((s) => ({
+      href: s.href,
+      label: s.label,
+      icon: s.icon,
+      ...(s.key === 'report' ? { children: REPORT_FAMILY } : null),
+    })),
   },
 ];
+
+const NAV_ITEMS = navWith(
+  financeShortcuts('/(store)')
+    .filter((s) => !DAYBOOK_ENTRY_KEYS.has(s.key))
+    .sort((a, b) => financeNavRank(a.key) - financeNavRank(b.key))
+);
+
+// The phone's side panel (MobileNavDrawer) lists every one of the Finance page's shortcuts, the entries
+// (Received, Paid, Sales, Purchase, Expenses) included, in that page's own order.
+const PHONE_NAV_ITEMS = navWith(financeShortcuts('/(store)'));
 
 // What an organization's features add to the side panel. Vehicles: Stock and Inventory becomes two lists - Stock (only
 // what is still in hand) stays one of Finance's pages, where Stock and Inventory was, and Inventory (every vehicle, in
@@ -88,6 +98,48 @@ function featureNav(items: WebNavItem[], on: NavFeatures): WebNavItem[] {
   );
 }
 
+// Sales and Purchase as the Finance page has them, taken from its list so label, icon and link never drift: each opens a
+// new bill. The side panel leaves them out for most accounts - they are buttons on the Day Book. The list of sales and its
+// totals are the Sales Report, so Sales here is only the form.
+const SALE_AND_PURCHASE_NAV: WebNavItem[] = financeShortcuts('/(store)')
+  .filter((s) => s.key === 'sales' || s.key === 'purchase')
+  .map(({ href, label, icon }) => ({ href, label, icon }));
+
+// Marketing: everything that brings customers in, as one group of the All In One Abroad account only (the way Auto Stock
+// Manager groups it). It is a title over its pages - it opens the first, Leads, and only the page lights up.
+const MARKETING_NAV: WebNavItem = {
+  href: '/(store)/leads',
+  label: 'Marketing',
+  icon: 'megaphone',
+  heading: true,
+  collapsible: true,
+  children: [
+    { href: '/(store)/leads', label: 'Leads', icon: 'people' },
+    { href: '/(store)/crm', label: 'CRM', icon: 'heart' },
+    { href: '/(store)/share', label: 'Share', icon: 'share-social' },
+    { href: '/(store)/offers', label: 'Offers', icon: 'gift' },
+    { href: '/(store)/visits', label: 'Visits', icon: 'eye' },
+  ],
+};
+
+// The All In One Abroad account (the Luvkush login) has the whole side panel, with the shop's own pages right below the
+// Dashboard instead of inside Finance: Stock and Inventory, then Sales, Purchase and Marketing. Everything else stays where it is.
+// Stock and Inventory is taken from Finance's own list so its label and icon never drift.
+function shopNav(items: WebNavItem[]): WebNavItem[] {
+  const stock = items.flatMap((item) => item.children ?? []).find((child) => child.href.endsWith('/inventory'));
+  if (!stock) return items;
+  // Moved, not copied: on the phone's list Sales and Purchase are also Finance's children, so they leave it.
+  const moved = new Set([stock.href, ...SALE_AND_PURCHASE_NAV.map((item) => item.href)]);
+  const [dashboard, ...rest] = items;
+  return [
+    dashboard,
+    stock,
+    ...SALE_AND_PURCHASE_NAV,
+    MARKETING_NAV,
+    ...rest.map((item) => (item.children ? { ...item, children: item.children.filter((child) => !moved.has(child.href)) } : item)),
+  ];
+}
+
 const HIDDEN: [string, string][] = [
   ['rent', 'Rent & EMI'],
   ['rent-entry', 'Rent'],
@@ -95,6 +147,11 @@ const HIDDEN: [string, string][] = [
   ['customers', 'Ledger'],
   ['customer/[id]', 'Ledger'],
   ['transactions', 'Statement'],
+  ['leads', 'Leads'],
+  ['crm', 'CRM'],
+  ['share', 'Share'],
+  ['offers', 'Offers'],
+  ['visits', 'Visits'],
   // Stock and Inventory is one of Finance's pages now (side panel, and a tile on the Finance page on a phone). A vehicle
   // account has it as Inventory, and Stock (only what is in hand) in Finance - see featureNav.
   ['inventory', 'Stock and Inventory'],
@@ -125,7 +182,14 @@ export default function StoreLayout() {
   const rent = useFeature('finance.rent');
   const emi = useFeature('finance.emi');
   const featuresLoaded = useFeaturesLoaded();
-  const navItems = useMemo(() => featureNav(NAV_ITEMS, { vehicles, rent, emi }), [vehicles, rent, emi]);
+  const profile = useAuthStore((state) => state.profile);
+  // shortcut: the All In One Abroad shop pages are still picked out by business name, not by a feature flag; make it one when the shop moves onto the portal's feature catalogue.
+  const shop = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
+  const [navItems, phoneNavItems] = useMemo(() => {
+    const shape = (base: WebNavItem[]) => (shop ? shopNav(base) : featureNav(base, { vehicles, rent, emi }));
+    return [shape(NAV_ITEMS), shape(PHONE_NAV_ITEMS)];
+  }, [vehicles, rent, emi, shop]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const tabs = (
     <Tabs
       backBehavior="history"
@@ -135,6 +199,7 @@ export default function StoreLayout() {
         header: ({ options }) => (
           <PortalHeaderBar
             title={options.title}
+            onMenu={isWideWeb ? undefined : () => setMenuOpen(true)}
             hideAccount={isWideWeb}
             left={options.headerLeft?.({ canGoBack: false })}
             right={options.headerRight?.({ canGoBack: false })}
@@ -171,7 +236,16 @@ export default function StoreLayout() {
           {tabs}
         </WebSidebarShell>
       ) : (
-        tabs
+        <>
+          {tabs}
+          <MobileNavDrawer
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            items={phoneNavItems}
+            roleLabel="Company"
+            profileHref="/(store)/profile"
+          />
+        </>
       )}
     </RoleGuard>
   );

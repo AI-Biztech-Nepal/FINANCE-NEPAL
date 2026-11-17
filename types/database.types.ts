@@ -41,8 +41,73 @@ export interface Product {
   stock_level: number;
   reorder_level: number;
   is_active: boolean;
+  /** Listed on the company's own website (0028) - an account that sells online. The fields below are read only then. */
+  show_on_website?: boolean;
+  website_category?: 'luggage' | 'kitchen' | 'appliances' | null;
+  /** The item's photo, a public link into the product-photos bucket. */
+  image_url?: string | null;
+  description?: string | null;
+  /** The price before a discount, struck through on the website beside the selling price. */
+  original_price?: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export type LeadSource = 'walk_in' | 'website' | 'facebook' | 'tiktok' | 'referral' | 'other';
+export type LeadStatus = 'new' | 'contacted' | 'interested' | 'converted' | 'lost';
+
+/** One contact with a lead, kept in the lead's `history` (oldest first). */
+export interface LeadHistoryEntry {
+  kind: 'call' | 'whatsapp' | 'visit' | 'note' | 'sale';
+  note: string;
+  at: string;
+  /** A 'sale' entry: the bill it is for, and how the customer found the shop when that bill was saved. A person's lead
+   * can change from one sale to the next, so each sale keeps its own. Entries from before this have none of the three. */
+  sale_id?: string;
+  source?: LeadSource;
+  source_note?: string | null;
+}
+
+/** A person being followed up (0029). Shown on the All In One Abroad account's Leads page. */
+export interface Lead {
+  id: string;
+  owner_id: string;
+  /** The customer this lead became when a sale was recorded for them. */
+  customer_id: string | null;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  source: LeadSource;
+  /** Who referred them (Referral) or the detail typed in (Other). */
+  source_note: string | null;
+  interested_in: string | null;
+  status: LeadStatus;
+  /** The day to get back to them, 'YYYY-MM-DD'. */
+  follow_up_on: string | null;
+  history: LeadHistoryEntry[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** A prize on the website's wheel (0030). `weight` is its chance against the others; `stock` is how many can still be won. */
+export interface OfferPrize {
+  id: string;
+  owner_id: string;
+  name: string;
+  weight: number;
+  stock: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Someone who spun the wheel; one per mobile number (0030). */
+export interface OfferSpin {
+  id: string;
+  owner_id: string;
+  name: string;
+  phone: string;
+  prize: string;
+  created_at: string;
 }
 
 // A name (and its last-used rate) typed into Sale/Purchase's item picker
@@ -285,6 +350,9 @@ export interface Database {
     Tables: {
       profiles: { Row: Profile; Insert: Partial<Profile>; Update: Partial<Profile>; Relationships: [] };
       products: { Row: Product; Insert: Partial<Product>; Update: Partial<Product>; Relationships: [] };
+      leads: { Row: Lead; Insert: Partial<Lead>; Update: Partial<Lead>; Relationships: [] };
+      offer_prizes: { Row: OfferPrize; Insert: Partial<OfferPrize>; Update: Partial<OfferPrize>; Relationships: [] };
+      offer_spins: { Row: OfferSpin; Insert: Partial<OfferSpin>; Update: Partial<OfferSpin>; Relationships: [] };
       customers: { Row: Customer; Insert: Partial<Customer>; Update: Partial<Customer>; Relationships: [] };
       party_types: { Row: PartyType; Insert: Partial<PartyType>; Update: Partial<PartyType>; Relationships: [] };
       finance_items: { Row: FinanceItem; Insert: Partial<FinanceItem>; Update: Partial<FinanceItem>; Relationships: [] };

@@ -1,5 +1,6 @@
 // lib/components/web/WebSidebarShell.tsx
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { router, usePathname, useGlobalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../hooks/useAuth';
@@ -18,6 +19,10 @@ export interface WebNavItem {
   children?: WebNavItem[];
   // A title over its children, not a page of its own: it opens its first child and only the child lights up.
   heading?: boolean;
+  // A dropdown: pressing the title opens or closes its children instead of going anywhere. It starts closed, and opens
+  // itself when the page showing is one of its children. Only the groups that ask for it behave this way - the rest of
+  // the panel always shows every child.
+  collapsible?: boolean;
 }
 
 /** One row of the nav list, indented by how deep it sits (0 = Home/Finance,
@@ -26,9 +31,27 @@ export interface WebNavItem {
  * Defined outside WebSidebarShell so its identity is stable across renders -
  * an inline component here would remount this whole branch (and its children)
  * on every render instead of just updating it. */
-function NavRow({ item, depth, isActive }: { item: WebNavItem; depth: number; isActive: (href: string) => boolean }) {
+function NavRow({
+  item,
+  depth,
+  isActive,
+  onNavigate,
+}: {
+  item: WebNavItem;
+  depth: number;
+  isActive: (href: string) => boolean;
+  onNavigate?: () => void;
+}) {
   const active = !item.heading && isActive(item.href);
   const top = depth === 0;
+
+  // A dropdown group: closed until opened, and open while one of its pages is the page showing.
+  const hasActiveChild = !!item.children?.some((child) => isActive(child.href));
+  const [open, setOpen] = useState(hasActiveChild);
+  useEffect(() => {
+    if (hasActiveChild) setOpen(true);
+  }, [hasActiveChild]);
+  const showChildren = !item.collapsible || open;
 
   const color = active ? '#2563EB' : top ? '#6B7280' : '#9CA3AF';
   return (
@@ -42,10 +65,17 @@ function NavRow({ item, depth, isActive }: { item: WebNavItem; depth: number; is
         }}
       >
         <Pressable
-          onPress={() => router.push((item.heading ? item.children?.[0]?.href ?? item.href : item.href) as any)}
-          accessibilityRole="link"
+          onPress={() => {
+            if (item.collapsible) {
+              setOpen((was) => !was);
+              return;
+            }
+            router.push((item.heading ? item.children?.[0]?.href ?? item.href : item.href) as any);
+            onNavigate?.();
+          }}
+          accessibilityRole={item.collapsible ? 'button' : 'link'}
           accessibilityLabel={item.label}
-          accessibilityState={{ selected: active }}
+          accessibilityState={item.collapsible ? { expanded: open } : { selected: active }}
           aria-current={active ? 'page' : undefined}
           style={{
             flex: 1,
@@ -68,13 +98,14 @@ function NavRow({ item, depth, isActive }: { item: WebNavItem; depth: number; is
           >
             {item.label}
           </Text>
+          {item.collapsible && <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={hasActiveChild ? '#2563EB' : '#9CA3AF'} />}
         </Pressable>
       </View>
 
-      {!!item.children?.length && (
+      {!!item.children?.length && showChildren && (
         <View style={{ marginTop: 2, marginBottom: 4, gap: 1 }}>
           {item.children.map((child) => (
-            <NavRow key={child.href} item={child} depth={depth + 1} isActive={isActive} />
+            <NavRow key={child.href} item={child} depth={depth + 1} isActive={isActive} onNavigate={onNavigate} />
           ))}
         </View>
       )}
@@ -103,31 +134,14 @@ const CONTENT_MAX_WIDTH = 1840;
 // is still "web" (Platform.OS === 'web'), but a 240px sidebar plus content
 // squeezed into a ~360-400px phone screen has nowhere near enough room and
 // collapses into single characters per line. 768px comfortably fits the
-// 240px sidebar plus a readable content column beside it.
+// 240px sidebar plus a readable content column beside it. A phone gets the
+// same panel as a slide-in drawer instead - see MobileNavDrawer.
 export const WEB_SIDEBAR_MIN_WIDTH = 768;
 
-/** Web-only desktop shell: a persistent left sidebar (the same sections as
- * the mobile bottom tabs, always visible) beside the actual screen content.
- * Mobile is untouched - each role's _layout.tsx only reaches for this on
- * Platform.OS === 'web', still rendering plain Tabs (bottom bar and all)
- * everywhere else. The Tabs navigator underneath keeps managing real
- * navigation state/headers/hidden routes exactly as before; this only adds
- * a parallel nav rail beside it and hides the now-redundant bottom bar. */
-export function WebSidebarShell({
-  items,
-  roleLabel,
-  profileHref,
-  children,
-}: {
-  items: WebNavItem[];
-  roleLabel: string;
-  /** Where the account block at the bottom leads (the role's profile screen). */
-  profileHref?: string;
-  children: React.ReactNode;
-}) {
+/** Whether a nav href is the page that is open now. */
+function useNavActive(): (href: string) => boolean {
   const pathname = usePathname();
   const searchParams = useGlobalSearchParams<Record<string, string>>();
-  const profile = useAuthStore((state) => state.profile);
 
   // Several Finance sub-links share one route with a different `type` query
   // param (Payment In/Out both go to quick-payment, Sales/Purchase/Expenses
@@ -146,7 +160,7 @@ export function WebSidebarShell({
     return path.replace(/\/\([^/]+\)/g, '') || '/';
   }
 
-  function isActive(href: string): boolean {
+  return function isActive(href: string): boolean {
     const [hrefPathRaw, hrefQuery] = href.split('?');
     const hrefPath = withoutGroups(hrefPathRaw);
     const pathMatches = pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
@@ -157,12 +171,34 @@ export function WebSidebarShell({
     return Array.from(new URLSearchParams(hrefQuery).entries()).every(
       ([key, value]) => (searchParams[key] ?? '') === value
     );
-  }
+  };
+}
+
+/** The side panel itself: the brand, the nav list and the account block. The web shell below keeps it
+ * beside the page; MobileNavDrawer slides it over the page on a phone (`onNavigate` closes it, `style`
+ * sizes it and clears the status bar). */
+export function SidebarPanel({
+  items,
+  roleLabel,
+  profileHref,
+  onNavigate,
+  style,
+}: {
+  items: WebNavItem[];
+  roleLabel: string;
+  /** Where the account block at the bottom leads (the role's profile screen). */
+  profileHref?: string;
+  /** Called after any link in the panel is pressed. */
+  onNavigate?: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const profile = useAuthStore((state) => state.profile);
+  const isActive = useNavActive();
 
   return (
-    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: '#F9FAFB' }}>
-      <View
-        style={{
+    <View
+      style={[
+        {
           width: 240,
           flexShrink: 0,
           backgroundColor: '#fff',
@@ -171,75 +207,108 @@ export function WebSidebarShell({
           paddingTop: 20,
           paddingBottom: 14,
           paddingHorizontal: 14,
+        },
+        style,
+      ]}
+    >
+      {/* The brand mark: the app's own logo and name (DEEVA on Deeva Auto's account). Pressing it goes back to the
+          first page of the side panel (the Dashboard). */}
+      <Pressable
+        onPress={() => {
+          if (items[0]) router.push(items[0].href as never);
+          onNavigate?.();
+        }}
+        accessibilityRole="link"
+        accessibilityLabel="Go to the dashboard"
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, marginBottom: 20 }}
+      >
+        <AppLogo size={28} />
+        <Text style={{ fontSize: 15, fontWeight: '800', color: '#111827' }}>
+          {isDeevaBrand(profile?.business_name?.trim() || profile?.full_name) ? 'DEEVA' : 'Finance Nepal'}
+        </Text>
+      </Pressable>
+
+      {/* The nav list scrolls on its own (minHeight: 0 lets a flex child
+          shrink below its content), so a long open submenu like Finance's
+          can never push the account block below the fold - it stays
+          pinned at the bottom of the panel instead. */}
+      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
+        {/* A parent (Finance, Report, ...) is "active" only by its own href, not by
+            whichever descendant route is open - that one carries its own highlight
+            instead, so the parent doesn't stay lit up while browsing a child. */}
+        {items.map((item) => (
+          <NavRow key={item.href} item={item} depth={0} isActive={isActive} onNavigate={onNavigate} />
+        ))}
+      </ScrollView>
+
+      <Pressable
+        onPress={
+          profileHref
+            ? () => {
+                router.push(profileHref as any);
+                onNavigate?.();
+              }
+            : undefined
+        }
+        disabled={!profileHref}
+        accessibilityLabel="Account and company details"
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          marginTop: 8,
+          paddingTop: 12,
+          paddingHorizontal: 8,
+          borderTopWidth: 1,
+          borderTopColor: '#F3F4F6',
         }}
       >
-        {/* The brand mark: the app's own logo and name (DEEVA on Deeva Auto's account). Pressing it goes back to the
-            first page of the side panel (the Dashboard). */}
-        <Pressable
-          onPress={() => items[0] && router.push(items[0].href as never)}
-          accessibilityRole="link"
-          accessibilityLabel="Go to the dashboard"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, marginBottom: 20 }}
-        >
-          <AppLogo size={28} />
-          <Text style={{ fontSize: 15, fontWeight: '800', color: '#111827' }}>
-            {isDeevaBrand(profile?.business_name?.trim() || profile?.full_name) ? 'DEEVA' : 'Finance Nepal'}
-          </Text>
-        </Pressable>
-
-        {/* The nav list scrolls on its own (minHeight: 0 lets a flex child
-            shrink below its content), so a long open submenu like Finance's
-            can never push the account block below the fold - it stays
-            pinned at the bottom of the panel instead. */}
-        <ScrollView
-          style={{ flex: 1, minHeight: 0 }}
-          contentContainerStyle={{ gap: 2 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* A parent (Finance, Report, ...) is "active" only by its own href, not by
-              whichever descendant route is open - that one carries its own highlight
-              instead, so the parent doesn't stay lit up while browsing a child. */}
-          {items.map((item) => (
-            <NavRow key={item.href} item={item} depth={0} isActive={isActive} />
-          ))}
-        </ScrollView>
-
-        <Pressable
-          onPress={profileHref ? () => router.push(profileHref as any) : undefined}
-          disabled={!profileHref}
-          accessibilityLabel="Account and company details"
+        <View
           style={{
-            flexDirection: 'row',
+            width: 34,
+            height: 34,
+            borderRadius: 999,
+            backgroundColor: '#2563EB',
             alignItems: 'center',
-            gap: 10,
-            marginTop: 8,
-            paddingTop: 12,
-            paddingHorizontal: 8,
-            borderTopWidth: 1,
-            borderTopColor: '#F3F4F6',
+            justifyContent: 'center',
+            flexShrink: 0,
           }}
         >
-          <View
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 999,
-              backgroundColor: '#2563EB',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{initialsOf(profile?.full_name)}</Text>
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: '#111827' }}>
-              {profile?.full_name ?? 'Account'}
-            </Text>
-            <Text style={{ fontSize: 12, color: '#6B7280' }}>{roleLabel}</Text>
-          </View>
-        </Pressable>
-      </View>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{initialsOf(profile?.full_name)}</Text>
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '700', color: '#111827' }}>
+            {profile?.full_name ?? 'Account'}
+          </Text>
+          <Text style={{ fontSize: 12, color: '#6B7280' }}>{roleLabel}</Text>
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+
+/** Web-only desktop shell: a persistent left sidebar (the same sections as
+ * the mobile bottom tabs, always visible) beside the actual screen content.
+ * Each role's _layout.tsx only reaches for this on a wide Platform.OS === 'web'
+ * screen, still rendering plain Tabs (bottom bar and all) everywhere else, with
+ * the same panel as a slide-in drawer (MobileNavDrawer). The Tabs navigator underneath keeps managing real
+ * navigation state/headers/hidden routes exactly as before; this only adds
+ * a parallel nav rail beside it and hides the now-redundant bottom bar. */
+export function WebSidebarShell({
+  items,
+  roleLabel,
+  profileHref,
+  children,
+}: {
+  items: WebNavItem[];
+  roleLabel: string;
+  /** Where the account block at the bottom leads (the role's profile screen). */
+  profileHref?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: '#F9FAFB' }}>
+      <SidebarPanel items={items} roleLabel={roleLabel} profileHref={profileHref} />
 
       {/* `alignItems: 'center'` here (rather than `marginHorizontal: 'auto'`
           on the capped child) made the capped child fall back to

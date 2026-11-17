@@ -9,6 +9,15 @@ export function isDeevaBrand(businessName: string | null | undefined): boolean {
   return /\bdee?va\s+auto\b/i.test(businessName ?? '');
 }
 
+/** The All In One Abroad account - one login, known as Luvkush too. It is a shop with its own website
+ * (allinoneabroad.com): its side panel is the Dashboard and Stock and Inventory, nothing else, and the items there can
+ * be switched on to appear on the website. As with Deeva there is no per-account setting, so it is picked out by the
+ * business name on its profile: "All In One Abroad" or "Allinone Abroad", or "Luvkush", "Luv Kush", "Luv-Kush" or
+ * "Lav Kush", in any case. */
+export function isAllInOneAbroad(businessName: string | null | undefined): boolean {
+  return /\ball[\s_-]*in[\s_-]*one[\s_-]*abroad\b|\bl[ua]v[\s_-]*kush\b/i.test(businessName ?? '');
+}
+
 export interface BannerColors {
   /** The flat band (Finance, Report). */
   solid: string;

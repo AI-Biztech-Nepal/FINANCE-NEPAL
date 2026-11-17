@@ -24,7 +24,6 @@ import { adStringToBs, bsToAdString, bsDaysInMonth, numericDateLabel, BS_MONTHS 
 import { localTodayIso } from '../../utils/localDate';
 import { round2 } from '../../utils/money';
 import { WEB_SIDEBAR_MIN_WIDTH } from '../web/WebSidebarShell';
-import { shortcuts } from './FinanceDashboardScreen';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const INK = '#0F172A';
@@ -601,18 +600,6 @@ export function BalanceSheetScreen({ basePath }: { basePath: string }) {
       <Text className="text-[11.5px] text-gray-400">
         Stock is valued at purchase cost at today's quantities. Equity is the balancing figure: assets minus liabilities. Tap a line to open its detail.
       </Text>
-
-      {/* shortcuts: on a phone the sidebar is not there */}
-      {!wide && (
-        <View className="flex-row flex-wrap" style={{ gap: 10 }}>
-          {shortcuts(basePath).map((s) => (
-            <Pressable key={s.key} onPress={() => router.push(s.href as never)} className="flex-row items-center rounded-xl border border-gray-200 bg-white px-3 py-2.5" style={{ gap: 8 }}>
-              <Ionicons name={s.icon} size={16} color="#1D4ED8" />
-              <Text className="text-[13px] font-semibold text-gray-800">{s.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
     </ScrollView>
   );
 }

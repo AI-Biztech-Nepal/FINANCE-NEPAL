@@ -36,8 +36,9 @@ import { toBsHistoryLabel } from '../../utils/nepaliDate';
 import { localTodayIso } from '../../utils/localDate';
 import { compareItems, entryDay } from '../../utils/ledgerStatement';
 import { reportHtml, type PrintReport } from '../../utils/printReport';
-import { itemListOf } from '../../utils/accountFeatures';
+import { isAllInOneAbroad, itemListOf } from '../../utils/accountFeatures';
 import { useFeature } from '../../features/useFeatures';
+import { EMPTY_WEBSITE_FORM, WebsiteListingFields, type WebsiteForm } from './WebsiteListingFields';
 import { round2 } from '../../utils/money';
 import { highlightText } from './Highlight';
 import { tidyName } from '../../utils/nameCaps';
@@ -110,7 +111,8 @@ interface Movement {
 const qty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 const rs = (n: number | null) => (n == null ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 2 }));
 
-interface FormState {
+// The website fields (WebsiteForm) ride along in the form but have their own section, not a row of the grid.
+interface FormState extends WebsiteForm {
   name: string;
   sku: string;
   barcode: string;
@@ -122,13 +124,17 @@ interface FormState {
   reorder_level: string;
 }
 
+/** The fields drawn as rows of the grid. */
+type GridKey = Exclude<keyof FormState, keyof WebsiteForm>;
+
 const EMPTY_FORM: FormState = {
   name: '', sku: '', barcode: '', category: '', unit: 'pcs', price: '', purchase_price: '', stock_level: '', reorder_level: '',
+  ...EMPTY_WEBSITE_FORM,
 };
 
 // The form's field order - down the rows, left to right - which is also the
 // order Enter walks through them (the last one saves).
-const FORM_ROWS: (keyof FormState)[][] = [
+const FORM_ROWS: GridKey[][] = [
   ['name'],
   ['sku', 'barcode'],
   ['category', 'unit'],
@@ -136,9 +142,10 @@ const FORM_ROWS: (keyof FormState)[][] = [
   ['stock_level', 'reorder_level'],
 ];
 const FORM_ORDER = FORM_ROWS.flat();
-const NUMERIC_FIELDS = new Set<keyof FormState>(['price', 'purchase_price', 'stock_level', 'reorder_level']);
+const NUMERIC_FIELDS = new Set<GridKey>(['price', 'purchase_price', 'stock_level', 'reorder_level']);
 
-/** What a save writes to `products` (the form's text, parsed). */
+/** What a save writes to `products` (the form's text, parsed). The website columns are only here for an account that
+ * has a website (see isAllInOneAbroad) - others never send them, so they work before 0028 is run. */
 interface ProductValues {
   name: string;
   sku: string | null;
@@ -149,6 +156,19 @@ interface ProductValues {
   purchase_price: number | null;
   stock_level: number;
   reorder_level: number;
+  show_on_website?: boolean;
+  website_category?: 'luggage' | 'kitchen' | 'appliances' | null;
+  image_url?: string | null;
+  description?: string | null;
+  original_price?: number | null;
+}
+
+/** What an item that is switched on for the website still lacks before the shop can list it. */
+function websiteGaps(v: ProductValues): string[] {
+  if (!v.show_on_website) return [];
+  return [!v.image_url && 'a photo', !v.website_category && 'a shop section', !(v.price > 0) && 'a selling price'].filter(
+    (gap): gap is string => !!gap
+  );
 }
 
 function formFromProduct(p: Product): FormState {
@@ -162,6 +182,11 @@ function formFromProduct(p: Product): FormState {
     purchase_price: p.purchase_price != null ? String(p.purchase_price) : '',
     stock_level: String(p.stock_level),
     reorder_level: String(p.reorder_level),
+    show_on_website: p.show_on_website ? '1' : '',
+    website_category: p.website_category ?? '',
+    image_url: p.image_url ?? '',
+    description: p.description ?? '',
+    original_price: p.original_price != null ? String(p.original_price) : '',
   };
 }
 
@@ -552,6 +577,9 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
   });
   // A vehicle account reads each car's money - paid and still owed - where others read units sold and bought.
   const vehicles = useFeature('finance.vehicles');
+  // An account with its own website lists items on it from here: a switch, a photo and a category on each item.
+  // shortcut: the website listing is still picked out by business name, not a feature flag; make it one with the shop's other pages.
+  const website = isAllInOneAbroad(profile?.business_name?.trim() || profile?.full_name);
   const { data: vendorLedger } = useSupabaseQuery('vendor_ledger_entries', {
     filters: userId ? { owner_id: userId } : {},
     all: true,
@@ -1017,6 +1045,16 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       showAlert('Add a name', 'Enter the product name.');
       return;
     }
+    // Names are unique (in any case), so a second "Waiwai" would be refused by the database only after "Yes, save"
+    // and drop the user back on the form. Say so now and offer the one already in stock.
+    const same = (products ?? []).find((p) => p.id !== editing.id && nameKey(p.name) === nameKey(f.name));
+    if (same) {
+      showAlert('Already in your stock', `"${same.name}" is already a product, so it cannot be added again. Open it to change it, or use a different name.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open it', onPress: () => setEditing({ id: same.id, form: formFromProduct(same) }) },
+      ]);
+      return;
+    }
     const values: ProductValues = {
       name: f.name.trim(),
       sku: f.sku.trim() || null,
@@ -1028,6 +1066,19 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       stock_level: Number(f.stock_level) || 0,
       reorder_level: Number(f.reorder_level) || 0,
     };
+    if (website) {
+      const listed = f.show_on_website === '1';
+      const original = f.original_price.trim() ? Number(f.original_price) : null;
+      // Save always saves. An item that lacks something the shop needs is kept (the website leaves it out until it is
+      // complete - see website_products()), and the save says what is missing afterwards (see websiteGaps).
+      // A price before discount that is not higher than the selling price is saved as typed; the website only strikes
+      // it through when it is higher (see app_sync.php), so there is nothing to refuse here.
+      values.show_on_website = listed;
+      values.website_category = f.website_category === 'luggage' || f.website_category === 'kitchen' || f.website_category === 'appliances' ? f.website_category : null;
+      values.image_url = f.image_url || null;
+      values.description = f.description.trim() || null;
+      values.original_price = original;
+    }
     setConfirming({
       values,
       options: {
@@ -1037,6 +1088,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
           { label: editing.id ? 'In stock' : 'Opening stock', value: `${qty(values.stock_level)} ${values.unit}` },
           { label: 'Selling price', value: `NPR ${rs(values.price)}` },
           ...(values.purchase_price != null ? [{ label: 'Cost price', value: `NPR ${rs(values.purchase_price)}` }] : []),
+          ...(website ? [{ label: 'On website', value: !values.show_on_website ? 'No' : websiteGaps(values).length ? 'Not yet - incomplete' : 'Yes' }] : []),
         ],
       },
     });
@@ -1058,6 +1110,11 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       const msg = getErrorMessage(err);
       showAlert('Could not save', /duplicate key/i.test(msg) ? 'A product with this name or barcode already exists.' : msg);
       return;
+    }
+    // Saved, but the shop leaves an incomplete item out - say what it needs so it is not left waiting unseen.
+    const gaps = websiteGaps(values);
+    if (gaps.length) {
+      showAlert('Saved - not on the website yet', `${values.name} will appear on allinoneabroad.com once you add ${gaps.join(' and ')}. Open it from the list and press Edit.`);
     }
     // A new name goes onto its bills, payments and rentals too, or the item would lose its vendor, model,
     // what was paid and what is due (see renameStockItem).
@@ -1260,7 +1317,7 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
 
   const dialogMode = layout.wide;
 
-  const fieldLabel = (key: keyof FormState): string => {
+  const fieldLabel = (key: GridKey): string => {
     switch (key) {
       case 'name': return 'Name';
       case 'sku': return 'SKU';
@@ -1301,49 +1358,81 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
   const saving = createProduct.isPending || updateProduct.isPending;
   const deletable = editing?.id ? (products ?? []).find((p) => p.id === editing.id) : undefined;
 
+  // The form is cut into a title, the fields and the buttons so a wide screen can keep the title and the buttons in
+  // place while only the fields scroll (see wideBody); a phone scrolls all of it together (see dialogBody).
+  const formTitle = editing && (
+    <>
+      <View className="mb-4 flex-row items-center justify-between">
+        <Text className={dialogMode ? 'text-lg font-extrabold text-gray-900' : 'text-lg font-bold text-gray-900'}>
+          {editing.id ? 'Edit product' : 'New product'}
+        </Text>
+        <Pressable onPress={closeDialog} hitSlop={8} accessibilityLabel="Close">
+          <Ionicons name="close" size={24} color="#374151" />
+        </Pressable>
+      </View>
+      {!!editing.hint && <Text className="-mt-2 mb-4 text-xs leading-[17px] text-gray-500">{editing.hint}</Text>}
+    </>
+  );
+  const formContent = editing && (
+    <>
+      {formFields}
+      {website && !!userId && (
+        <WebsiteListingFields form={editing.form} set={set} ownerId={userId} sellingPrice={Number(editing.form.price) || 0} />
+      )}
+    </>
+  );
+  const formButtons = dialogMode ? (
+    <View className="flex-row items-center border-t border-gray-100 pt-4" style={{ gap: 10, marginTop: 8 }}>
+      {deletable && (
+        <Pressable onPress={() => confirmDelete(deletable)} className="rounded-xl border border-red-200 px-4 py-3">
+          <Text className="text-sm font-bold text-red-600">Delete</Text>
+        </Pressable>
+      )}
+      <View className="flex-1" />
+      <Pressable onPress={closeDialog} className="rounded-xl border border-gray-300 bg-white px-5 py-3">
+        <Text className="text-sm font-bold text-gray-600">Cancel</Text>
+      </Pressable>
+      <Pressable onPress={save} disabled={saving} className="rounded-xl px-6 py-3 disabled:opacity-50" style={{ backgroundColor: '#1D4ED8' }}>
+        <Text className="text-sm font-bold text-white">Save</Text>
+      </Pressable>
+    </View>
+  ) : (
+    <>
+      <Pressable onPress={save} disabled={saving} className="mt-2 items-center rounded-xl bg-blue-600 py-3.5 disabled:opacity-50">
+        <Text className="text-[15px] font-bold text-white">Save</Text>
+      </Pressable>
+      {deletable && (
+        <Pressable onPress={() => confirmDelete(deletable)} className="mt-3 items-center rounded-xl border border-red-200 py-3.5">
+          <Text className="text-[15px] font-bold text-red-600">Delete product</Text>
+        </Pressable>
+      )}
+    </>
+  );
+  const confirmCard = confirming && <ConfirmSaveCard options={confirming.options} onConfirm={commitSave} onCancel={backToForm} />;
+
   // While the "save this?" question is up the form is only hidden, not
   // unmounted, so everything typed (and the caret's place) survives a "No".
+  // A phone: everything scrolls together.
   const dialogBody: ReactNode = editing && (
     <>
-      {confirming && <ConfirmSaveCard options={confirming.options} onConfirm={commitSave} onCancel={backToForm} />}
+      {confirmCard}
       <View style={confirming ? { display: 'none' } : undefined}>
-        <View className="mb-4 flex-row items-center justify-between">
-          <Text className={dialogMode ? 'text-lg font-extrabold text-gray-900' : 'text-lg font-bold text-gray-900'}>
-            {editing.id ? 'Edit product' : 'New product'}
-          </Text>
-          <Pressable onPress={closeDialog} hitSlop={8} accessibilityLabel="Close">
-            <Ionicons name="close" size={24} color="#374151" />
-          </Pressable>
-        </View>
-        {!!editing.hint && <Text className="-mt-2 mb-4 text-xs leading-[17px] text-gray-500">{editing.hint}</Text>}
-        {formFields}
-        {dialogMode ? (
-          <View className="mt-2 flex-row items-center" style={{ gap: 10 }}>
-            {deletable && (
-              <Pressable onPress={() => confirmDelete(deletable)} className="rounded-xl border border-red-200 px-4 py-3">
-                <Text className="text-sm font-bold text-red-600">Delete</Text>
-              </Pressable>
-            )}
-            <View className="flex-1" />
-            <Pressable onPress={closeDialog} className="rounded-xl border border-gray-300 bg-white px-5 py-3">
-              <Text className="text-sm font-bold text-gray-600">Cancel</Text>
-            </Pressable>
-            <Pressable onPress={save} disabled={saving} className="rounded-xl px-6 py-3 disabled:opacity-50" style={{ backgroundColor: '#1D4ED8' }}>
-              <Text className="text-sm font-bold text-white">Save</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <Pressable onPress={save} disabled={saving} className="mt-2 items-center rounded-xl bg-blue-600 py-3.5 disabled:opacity-50">
-              <Text className="text-[15px] font-bold text-white">Save</Text>
-            </Pressable>
-            {deletable && (
-              <Pressable onPress={() => confirmDelete(deletable)} className="mt-3 items-center rounded-xl border border-red-200 py-3.5">
-                <Text className="text-[15px] font-bold text-red-600">Delete product</Text>
-              </Pressable>
-            )}
-          </>
-        )}
+        {formTitle}
+        {formContent}
+        {formButtons}
+      </View>
+    </>
+  );
+  // A wide screen: the title and the buttons stay in place and only the fields scroll, so Save is always in reach.
+  const wideBody: ReactNode = editing && (
+    <>
+      {confirmCard}
+      <View style={confirming ? { display: 'none' } : { flexShrink: 1, minHeight: 0 }}>
+        {formTitle}
+        <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+          {formContent}
+        </ScrollView>
+        {formButtons}
       </View>
     </>
   );
@@ -1438,11 +1527,13 @@ export function InventoryScreen({ basePath, inStockOnly = false }: { basePath: s
       >
         {dialogMode ? (
           <View className="flex-1 items-center justify-center bg-black/40 px-6">
+            {/* The card never grows past the window: a long form (the website section) scrolls inside it between the
+                title and the buttons, so Save stays reachable. */}
             <View
               className="w-full rounded-2xl bg-white"
-              style={{ maxWidth: 560, padding: 24, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' }}
+              style={{ maxWidth: 560, maxHeight: '92%', padding: 24, boxShadow: '0 20px 50px rgba(16,24,40,0.25)' }}
             >
-              {dialogBody}
+              {wideBody}
             </View>
           </View>
         ) : (

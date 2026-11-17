@@ -27,12 +27,15 @@ const PROFILE_ROUTE: Record<string, string> = {
 export function PortalHeaderBar({
   title,
   backTo,
+  onMenu,
   hideAccount,
   left,
   right,
 }: {
   title?: string;
   backTo?: string;
+  /** Shows a menu button at the left that opens the side panel (the phone's slide-in drawer). */
+  onMenu?: () => void;
   /** Drops the account avatar from the right - where the layout already shows the account elsewhere (the web sidebar). */
   hideAccount?: boolean;
   /** A screen's own controls (see useScreenHeader): before the title, and between it and the avatar. */
@@ -48,6 +51,17 @@ export function PortalHeaderBar({
       className="flex-row items-center justify-between gap-3 border-b border-gray-100 bg-white px-6 pb-2.5"
       style={{ paddingTop: insets.top + 16 }}
     >
+      {!!onMenu && (
+        <Pressable
+          onPress={onMenu}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Open menu"
+          className="-my-1 -ml-3 -mr-1 h-11 w-11 items-center justify-center rounded-full active:bg-gray-100"
+        >
+          <Ionicons name="menu" size={26} color="#111827" />
+        </Pressable>
+      )}
       {!!backTo && (
         <Pressable
           onPress={() => (router.canGoBack() ? router.back() : router.replace(backTo as never))}
